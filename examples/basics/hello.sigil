@@ -1,0 +1,9 @@
+-- hello.sigil
+-- The simplest Sigil program: a single rule evaluation
+
+define greeting as "Hello from Sigil!"
+
+rule hello_world:
+  when true
+  then print greeting
+  explain "This is the simplest possible Sigil program"

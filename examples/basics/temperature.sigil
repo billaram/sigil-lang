@@ -1,0 +1,35 @@
+-- temperature.sigil
+-- Basic temperature monitoring with multiple rules and priorities
+
+module examples.temperature
+
+type SensorReading is record:
+  sensor_id: Text
+  temperature: Number
+  status: Symbol
+
+define SAFE_THRESHOLD as 100
+define WARNING_THRESHOLD as 80
+define CRITICAL_THRESHOLD as 150
+
+rule emergency_shutdown with priority 100:
+  when reading temperature exceeds CRITICAL_THRESHOLD
+  then shutdown_system
+  explain "Temperature {reading.temperature} exceeds critical threshold of {CRITICAL_THRESHOLD}"
+
+rule temperature_alert with priority 10:
+  when reading temperature exceeds SAFE_THRESHOLD
+  and reading status is :active
+  then trigger alert with severity :high
+  explain "Temperature {reading.temperature} exceeded safe threshold on sensor {reading.sensor_id}"
+
+rule temperature_warning with priority 5:
+  when reading temperature is between WARNING_THRESHOLD and SAFE_THRESHOLD
+  and reading status is :active
+  then trigger alert with severity :medium
+  explain "Temperature {reading.temperature} approaching safe threshold"
+
+rule normal_operation with priority 1:
+  when reading temperature is below WARNING_THRESHOLD
+  then log status :normal
+  explain "Temperature {reading.temperature} within normal range"

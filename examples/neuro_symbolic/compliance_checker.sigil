@@ -1,0 +1,95 @@
+-- compliance_checker.sigil
+-- AML/KYC compliance checking for financial transactions
+-- Demonstrates: neural parsing + symbolic policy evaluation + audit traces
+
+module examples.compliance
+
+-- Types
+type Transaction is record:
+  id: Text
+  amount: Number
+  currency: Symbol
+  sender_account_age_days: Number
+  recipient_jurisdiction: Symbol
+  transaction_type: Symbol
+  sender_pep_status: Boolean
+  sender_sanctions_match: Boolean
+
+type RiskLevel is one of:
+  block with reason: Text
+  escalate with reason: Text
+  flag with reason: Text
+  clear
+
+-- Neural: parse transaction narrative into structured form
+neural parse_transaction from narrative: Text:
+  model "fin-ner-v2"
+  returns Transaction
+  confidence_threshold 0.85
+  fallback to manual_review
+
+-- High-risk jurisdictions (FATF grey/black list)
+define HIGH_RISK_JURISDICTIONS as [
+  :iran, :north_korea, :myanmar,
+  :syria, :yemen, :south_sudan
+]
+
+-- Thresholds
+define CTR_THRESHOLD as 10000
+define SUSPICIOUS_THRESHOLD as 5000
+define NEW_ACCOUNT_DAYS as 30
+define STRUCTURING_WINDOW as 7
+
+-- Sanctions and PEP checks (highest priority)
+rule sanctions_block with priority 100:
+  when transaction sender_sanctions_match is true
+  then risk is block with reason: "OFAC sanctions match"
+  explain "Transaction blocked: sender matches OFAC sanctions list"
+  trace:
+    category :aml
+    regulation "OFAC SDN"
+    retention 7 years
+
+rule pep_escalation with priority 95:
+  when transaction sender_pep_status is true
+  and transaction amount exceeds SUSPICIOUS_THRESHOLD
+  then risk is escalate with reason: "PEP with significant transaction"
+  explain "Politically Exposed Person flagged for enhanced due diligence"
+
+-- Jurisdiction risk
+rule high_risk_jurisdiction with priority 90:
+  when transaction recipient_jurisdiction in HIGH_RISK_JURISDICTIONS
+  then risk is escalate with reason: "High-risk jurisdiction: {transaction.recipient_jurisdiction}"
+  explain "Recipient in FATF high-risk jurisdiction"
+
+-- CTR filing requirement
+rule ctr_filing with priority 80:
+  when transaction amount exceeds CTR_THRESHOLD
+  and transaction currency is :usd
+  then risk is flag with reason: "CTR filing required (>{CTR_THRESHOLD} USD)"
+  explain "Transaction exceeds CTR threshold per BSA requirements"
+  trace:
+    regulation "BSA/FinCEN CTR"
+
+-- New account + large transaction
+rule new_account_risk with priority 75:
+  when transaction sender_account_age_days is below NEW_ACCOUNT_DAYS
+  and transaction amount exceeds SUSPICIOUS_THRESHOLD
+  then risk is escalate with reason: "New account ({transaction.sender_account_age_days} days) with large transaction"
+  explain "Account age below {NEW_ACCOUNT_DAYS} days with transaction above {SUSPICIOUS_THRESHOLD}"
+
+-- Clear if no rules fired
+rule transaction_clear with priority 1:
+  when risk is not assigned
+  then risk is clear
+  explain "Transaction passed all compliance checks"
+
+-- Entry point
+main:
+  given narrative from input
+  given transaction as parse_transaction(narrative)
+  evaluate all rules with transaction
+  trace:
+    category :compliance
+    retention 7 years
+    compliance [:bsa, :aml, :fatf, :ofac]

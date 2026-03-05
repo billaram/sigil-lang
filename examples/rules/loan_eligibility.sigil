@@ -1,0 +1,109 @@
+-- loan_eligibility.sigil
+-- Full loan eligibility determination following federal lending guidelines.
+-- Demonstrates: types, rules, compute blocks, neural bridge, traces
+
+module examples.loan_eligibility
+
+import sigil.math
+
+-- Type definitions
+type Applicant is record:
+  name: Text
+  age: Number
+  income: Number
+  credit_score: Number
+  debt_to_income: Number
+  employment_years: Number
+  loan_amount: Number
+
+type Decision is one of:
+  approved with rate: Number
+  denied with reasons: list of Text
+  review with notes: Text
+
+-- Regulatory constants
+define MIN_AGE as 21
+define MAX_AGE as 65
+define MIN_CREDIT_SCORE as 680
+define MAX_DTI as 43
+define MIN_INCOME as 30000
+define MIN_EMPLOYMENT_YEARS as 2
+
+-- Eligibility rules
+rule age_check:
+  when applicant age is between MIN_AGE and MAX_AGE
+  then age_eligible is true
+  explain "Applicant age {applicant.age} is within eligible range ({MIN_AGE}-{MAX_AGE})"
+
+rule income_check:
+  when applicant income is at least MIN_INCOME
+  then income_eligible is true
+  explain "Applicant income {applicant.income} meets minimum threshold of {MIN_INCOME}"
+
+rule credit_check:
+  when applicant credit_score is at least MIN_CREDIT_SCORE
+  then credit_eligible is true
+  explain "Credit score {applicant.credit_score} meets minimum of {MIN_CREDIT_SCORE}"
+
+rule dti_check:
+  when applicant debt_to_income is at most MAX_DTI
+  then dti_eligible is true
+  explain "DTI {applicant.debt_to_income}% within federal limit of {MAX_DTI}%"
+
+rule employment_check:
+  when applicant employment_years is at least MIN_EMPLOYMENT_YEARS
+  then employment_eligible is true
+  explain "Employment history of {applicant.employment_years} years meets requirement"
+
+-- Composite eligibility
+rule full_eligibility with priority 10:
+  when age_eligible is true
+  and income_eligible is true
+  and credit_eligible is true
+  and dti_eligible is true
+  and employment_eligible is true
+  then loan_approved is true
+  explain "All eligibility criteria satisfied"
+
+-- Interest rate computation
+compute calculate_rate from applicant: Applicant returns Number:
+  given base_rate as 5.5
+  given credit_adjustment as (applicant.credit_score - 680) * 0.01
+  given dti_adjustment as (MAX_DTI - applicant.debt_to_income) * 0.05
+  given rate as base_rate - credit_adjustment - dti_adjustment
+  return math.max(rate, 2.5)
+
+-- Final decision rules
+rule approve_decision with priority 20:
+  when loan_approved is true
+  then:
+    given rate as calculate_rate(applicant)
+    return approved with rate: rate
+  explain "Loan approved at {rate}% interest"
+  trace:
+    category :lending
+    compliance [:cfpb, :ecoa, :fcra]
+
+rule deny_decision with priority 15:
+  when loan_approved is not true
+  then:
+    return denied with reasons: collect_denial_reasons()
+  explain "Application denied — see trace for specific failures"
+  trace:
+    category :lending
+    compliance [:cfpb, :ecoa, :fcra]
+
+-- Helper function
+compute collect_denial_reasons returns list of Text:
+  given reasons as []
+  if age_eligible is not true:
+    reasons becomes reasons + ["Age outside eligible range"]
+  if income_eligible is not true:
+    reasons becomes reasons + ["Income below minimum threshold"]
+  if credit_eligible is not true:
+    reasons becomes reasons + ["Credit score below minimum"]
+  if dti_eligible is not true:
+    reasons becomes reasons + ["Debt-to-income ratio exceeds limit"]
+  if employment_eligible is not true:
+    reasons becomes reasons + ["Insufficient employment history"]
+  return reasons

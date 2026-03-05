@@ -1,0 +1,75 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "sigil-lang"
+version = "0.1.0"
+description = "A neuro-symbolic programming language bridging human intent and deterministic execution"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Sigil Contributors"}
+]
+keywords = ["neuro-symbolic", "programming-language", "dsl", "ai", "rule-engine"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
+]
+
+dependencies = []
+
+[project.optional-dependencies]
+neural = [
+    "torch>=2.0",
+    "transformers>=4.30",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8",
+    "hypothesis>=6.0",
+]
+all = ["sigil-lang[neural,dev]"]
+
+[project.scripts]
+sigil = "sigil.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/billaram/sigil-lang"
+Documentation = "https://github.com/billaram/sigil-lang/tree/main/docs"
+Repository = "https://github.com/billaram/sigil-lang"
+Issues = "https://github.com/billaram/sigil-lang/issues"
+
+[tool.maturin]
+module-name = "sigil._sigil_core"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true

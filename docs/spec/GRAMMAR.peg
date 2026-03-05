@@ -1,0 +1,361 @@
+# Sigil PEG Grammar (Draft v0.1)
+#
+# This is the formal grammar specification for the Sigil programming language.
+# It uses PEG (Parsing Expression Grammar) notation.
+#
+# PEG Operators:
+#   'literal'   - string literal
+#   [chars]     - character class
+#   .           - any character
+#   (e)         - grouping
+#   e?          - optional (zero or one)
+#   e*          - zero or more
+#   e+          - one or more
+#   e1 e2       - sequence
+#   e1 / e2     - ordered choice (try e1 first, then e2)
+#   &e          - positive lookahead
+#   !e          - negative lookahead
+
+# ============================================================
+# Top-Level Structure
+# ============================================================
+
+Program         <- Spacing (ModuleDecl Spacing)? (TopLevelDecl Spacing)* EOF
+
+TopLevelDecl    <- ImportDecl
+                 / TypeDecl
+                 / ConstDecl
+                 / RuleDecl
+                 / ComputeDecl
+                 / NeuralDecl
+                 / MainDecl
+
+# ============================================================
+# Module & Imports
+# ============================================================
+
+ModuleDecl      <- 'module' Spacing ModulePath NEWLINE
+
+ImportDecl      <- 'import' Spacing ImportSource NEWLINE
+                 / 'from' Spacing ImportSource Spacing 'import' Spacing NameList NEWLINE
+
+ImportSource    <- 'python' Spacing DottedName (Spacing 'as' Spacing Identifier)?
+                 / 'rust' Spacing RustPath (Spacing 'as' Spacing Identifier)?
+                 / ModulePath
+
+ModulePath      <- Identifier ('.' Identifier)*
+DottedName      <- Identifier ('.' Identifier)*
+RustPath        <- Identifier ('::' Identifier)*
+NameList        <- Identifier (',' Spacing Identifier)*
+
+# ============================================================
+# Type Declarations
+# ============================================================
+
+TypeDecl        <- 'type' Spacing Identifier TypeParams? Spacing 'is' Spacing TypeBody NEWLINE
+
+TypeParams      <- '[' Spacing Identifier (',' Spacing Identifier)* Spacing ']'
+
+TypeBody        <- RecordType
+                 / EnumType
+                 / ConstrainedType
+                 / UnitType
+                 / TypeRef
+
+RecordType      <- 'record' ':' NEWLINE INDENT (FieldDecl NEWLINE)+ DEDENT
+
+FieldDecl       <- Identifier ':' Spacing TypeRef
+
+EnumType        <- 'one' Spacing 'of' ':' NEWLINE INDENT (EnumVariant NEWLINE)+ DEDENT
+
+EnumVariant     <- Identifier (Spacing 'with' Spacing FieldDecl (',' Spacing FieldDecl)*)?
+
+ConstrainedType <- TypeRef Spacing Constraint
+
+UnitType        <- TypeRef Spacing 'with' Spacing 'unit' Spacing Identifier
+
+TypeRef         <- 'Number' / 'Text' / 'Boolean' / 'Symbol'
+                 / 'Confidence' / 'Trace'
+                 / 'list' Spacing 'of' Spacing TypeRef
+                 / 'Option' '[' Spacing TypeRef Spacing ']'
+                 / Identifier TypeParams?
+
+# ============================================================
+# Constant Declarations
+# ============================================================
+
+ConstDecl       <- 'define' Spacing Identifier Spacing 'as' Spacing Expression NEWLINE
+
+# ============================================================
+# Rule Declarations
+# ============================================================
+
+RuleDecl        <- 'rule' Spacing Identifier RuleMeta? ':' NEWLINE
+                   INDENT RuleBody DEDENT
+
+RuleMeta        <- (Spacing 'with' Spacing 'priority' Spacing Integer)*
+
+RuleBody        <- (MetaField NEWLINE)*
+                   (GivenClause NEWLINE)*
+                   WhenClause NEWLINE
+                   (AndOrClause NEWLINE)*
+                   ThenClause NEWLINE
+                   (ExplainClause NEWLINE)?
+                   (TraceClause)?
+                   (UsingClause NEWLINE)?
+
+MetaField       <- ('version' / 'author' / 'tags') Spacing Expression
+
+GivenClause     <- 'given' Spacing Identifier Spacing 'from' Spacing Expression
+
+WhenClause      <- 'when' Spacing Condition
+
+AndOrClause     <- ('and' / 'or') Spacing 'not'? Spacing Condition
+
+ThenClause      <- 'then' Spacing Action
+                 / 'then' ':' NEWLINE INDENT (Statement NEWLINE)+ DEDENT
+
+ExplainClause   <- 'explain' Spacing StringLiteral
+
+TraceClause     <- 'trace' ':' NEWLINE INDENT (TraceField NEWLINE)+ DEDENT
+
+TraceField      <- Identifier Spacing Expression
+
+UsingClause     <- 'using' Spacing 'rust' (Spacing RustPath)?
+
+# ============================================================
+# Conditions
+# ============================================================
+
+Condition       <- QuantifiedCond
+                 / ComparisonCond
+                 / MembershipCond
+                 / StringCond
+                 / BooleanCond
+
+QuantifiedCond  <- ('any' / 'all' / 'none') Spacing Identifier Spacing
+                   'in' Spacing Expression Spacing
+                   ('has' / 'have') Spacing Condition
+
+ComparisonCond  <- Expression Spacing CompOp Spacing Expression
+
+CompOp          <- 'exceeds' / 'is' Spacing 'below'
+                 / 'is' Spacing 'at' Spacing 'least'
+                 / 'is' Spacing 'at' Spacing 'most'
+                 / 'is' Spacing 'between' Spacing Expression Spacing 'and'
+                 / 'is' Spacing 'not'
+                 / 'is'
+                 / 'equals'
+                 / '>' / '<' / '>=' / '<=' / '=' / '!='
+
+MembershipCond  <- Expression Spacing 'in' Spacing Expression
+                 / Expression Spacing 'not' Spacing 'in' Spacing Expression
+                 / Expression Spacing 'contains' Spacing Expression
+                 / Expression Spacing 'is' Spacing 'empty'
+                 / Expression Spacing 'has' Spacing 'count' Spacing Expression
+
+StringCond      <- Expression Spacing 'starts' Spacing 'with' Spacing Expression
+                 / Expression Spacing 'ends' Spacing 'with' Spacing Expression
+                 / Expression Spacing 'contains' Spacing Expression
+                 / Expression Spacing 'matches' Spacing 'pattern' Spacing StringLiteral
+
+BooleanCond     <- Expression Spacing 'is' Spacing 'true'
+                 / Expression Spacing 'is' Spacing 'false'
+
+# ============================================================
+# Actions
+# ============================================================
+
+Action          <- Identifier (Spacing 'with' Spacing ActionParams)?
+                 / Expression
+
+ActionParams    <- Identifier ':' Spacing Expression
+                   (',' Spacing Identifier ':' Spacing Expression)*
+
+# ============================================================
+# Compute Declarations (Functions)
+# ============================================================
+
+ComputeDecl     <- 'compute' Spacing Identifier Spacing
+                   'from' Spacing ParamList
+                   (Spacing 'returns' Spacing TypeRef)? ':' NEWLINE
+                   INDENT (Statement NEWLINE)+ DEDENT
+
+ParamList       <- Param (',' Spacing Param)*
+Param           <- Identifier (':' Spacing TypeRef)?
+
+# ============================================================
+# Neural Declarations
+# ============================================================
+
+NeuralDecl      <- 'neural' Spacing Identifier Spacing
+                   'from' Spacing Identifier ':' Spacing TypeRef ':' NEWLINE
+                   INDENT NeuralBody DEDENT
+
+NeuralBody      <- (NeuralField NEWLINE)+
+
+NeuralField     <- 'model' Spacing StringLiteral
+                 / 'using' Spacing 'python' Spacing DottedName
+                 / 'returns' Spacing TypeRef
+                 / 'confidence_threshold' Spacing NumberLiteral
+                 / 'threshold' Spacing NumberLiteral
+                 / 'candidates' Spacing ListLiteral
+                 / 'fallback' Spacing 'to' Spacing Expression
+
+# ============================================================
+# Main Entry Point
+# ============================================================
+
+MainDecl        <- 'main' ':' NEWLINE
+                   INDENT (Statement NEWLINE)+ DEDENT
+
+# ============================================================
+# Statements
+# ============================================================
+
+Statement       <- GivenStatement
+                 / ReturnStatement
+                 / IfStatement
+                 / ForStatement
+                 / EvaluateStatement
+                 / ExpressionStatement
+
+GivenStatement  <- 'given' Spacing Identifier Spacing 'as' Spacing Expression
+                 / 'given' Spacing Identifier Spacing 'from' Spacing Expression
+
+ReturnStatement <- 'return' Spacing Expression
+
+IfStatement     <- 'if' Spacing Condition ':' NEWLINE
+                   INDENT (Statement NEWLINE)+ DEDENT
+                   ('else' Spacing 'if' Spacing Condition ':' NEWLINE
+                   INDENT (Statement NEWLINE)+ DEDENT)*
+                   ('else' ':' NEWLINE
+                   INDENT (Statement NEWLINE)+ DEDENT)?
+
+ForStatement    <- 'for' Spacing 'each' Spacing Identifier Spacing
+                   'in' Spacing Expression ':' NEWLINE
+                   INDENT (Statement NEWLINE)+ DEDENT
+
+EvaluateStatement <- 'evaluate' Spacing ('all' Spacing 'rules' / Identifier)
+                     Spacing 'with' Spacing Expression
+
+ExpressionStatement <- Expression
+
+# ============================================================
+# Expressions
+# ============================================================
+
+Expression      <- PipelineExpr
+
+PipelineExpr    <- LogicalExpr (Spacing '|>' Spacing PipeOp)*
+
+PipeOp          <- 'filter' Spacing 'where' Spacing Condition
+                 / 'sort' Spacing 'by' Spacing Identifier (Spacing ('ascending' / 'descending'))?
+                 / 'take' Spacing ('first' / 'last') Spacing Expression
+                 / 'map' Spacing 'to' Spacing Expression
+                 / Identifier
+
+LogicalExpr     <- CompareExpr (Spacing ('and' / 'or') Spacing CompareExpr)*
+
+CompareExpr     <- AddExpr (Spacing CompOp Spacing AddExpr)?
+
+AddExpr         <- MulExpr (Spacing [+\-] Spacing MulExpr)*
+
+MulExpr         <- UnaryExpr (Spacing [*/] Spacing UnaryExpr)*
+
+UnaryExpr       <- 'not' Spacing UnaryExpr
+                 / '-' Spacing UnaryExpr
+                 / PostfixExpr
+
+PostfixExpr     <- PrimaryExpr (FieldAccess / FuncCall / IndexAccess)*
+
+FieldAccess     <- '.' Identifier
+FuncCall        <- '(' Spacing ArgList? Spacing ')'
+IndexAccess     <- '[' Spacing Expression Spacing ']'
+
+ArgList         <- Expression (',' Spacing Expression)*
+                 / NamedArg (',' Spacing NamedArg)*
+
+NamedArg        <- Identifier ':' Spacing Expression
+
+PrimaryExpr     <- NumberLiteral UnitSuffix?
+                 / StringLiteral
+                 / BoolLiteral
+                 / SymbolLiteral
+                 / ListLiteral
+                 / RecordLiteral
+                 / 'none'
+                 / MatchExpr
+                 / Identifier
+
+# ============================================================
+# Match Expression
+# ============================================================
+
+MatchExpr       <- 'match' Spacing Expression ':' NEWLINE
+                   INDENT (MatchArm NEWLINE)+ DEDENT
+
+MatchArm        <- Pattern Spacing '->' Spacing Expression
+
+Pattern         <- Literal / Identifier / '_'
+
+# ============================================================
+# Literals
+# ============================================================
+
+NumberLiteral   <- Float / Integer
+Integer         <- [0-9] ([0-9_]* [0-9])?
+Float           <- Integer '.' Integer
+
+UnitSuffix      <- Spacing ('degrees' / 'percent' / 'seconds' / 'milliseconds'
+                          / 'dollars' / 'confidence' / Identifier)
+
+StringLiteral   <- '"' StringChar* '"'
+                 / '"""' MultiLineChar* '"""'
+
+StringChar      <- !'"' !'\n' ('{' Expression '}' / .)
+MultiLineChar   <- !'"""' .
+
+BoolLiteral     <- 'true' / 'false'
+
+SymbolLiteral   <- ':' Identifier
+
+ListLiteral     <- '[' Spacing (Expression (',' Spacing Expression)*)? Spacing ']'
+
+RecordLiteral   <- '{' Spacing (RecordField (',' Spacing RecordField)*)? Spacing '}'
+RecordField     <- Identifier ':' Spacing Expression
+
+Literal         <- NumberLiteral / StringLiteral / BoolLiteral / SymbolLiteral / 'none'
+
+# ============================================================
+# Lexical Elements
+# ============================================================
+
+Identifier      <- !Keyword [a-zA-Z_] [a-zA-Z0-9_]*
+
+Keyword         <- ('rule' / 'when' / 'then' / 'and' / 'or' / 'not'
+                 / 'if' / 'else' / 'given' / 'define' / 'as' / 'is'
+                 / 'exceeds' / 'below' / 'between' / 'any' / 'all'
+                 / 'none' / 'in' / 'import' / 'export' / 'from'
+                 / 'module' / 'type' / 'neural' / 'explain' / 'with'
+                 / 'true' / 'false' / 'using' / 'compute' / 'return'
+                 / 'trace' / 'match' / 'for' / 'each' / 'evaluate'
+                 / 'main' / 'has' / 'have' / 'private' / 'mutable'
+                 / 'try' / 'on' / 'error' / 'fallback' / 'to'
+                 / 'returns' / 'record' / 'one' / 'of'
+                 ) !IdentChar
+
+IdentChar       <- [a-zA-Z0-9_]
+
+# ============================================================
+# Whitespace & Structure
+# ============================================================
+
+Spacing         <- (WhiteSpace / Comment)*
+WhiteSpace      <- ' ' / '\t'
+NEWLINE         <- '\r\n' / '\n' / '\r'
+INDENT          <- # Managed by lexer (indentation increase)
+DEDENT          <- # Managed by lexer (indentation decrease)
+Comment         <- '--' (!NEWLINE .)* NEWLINE
+                 / '{-' ((!'-}' .) / Comment)* '-}'
+EOF             <- !.
