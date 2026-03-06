@@ -1,0 +1,11 @@
+[package]
+name = "sigil_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_sigil_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.25", features = ["extension-module"] }

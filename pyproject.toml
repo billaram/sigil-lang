@@ -54,6 +54,8 @@ Issues = "https://github.com/billaram/sigil-lang/issues"
 
 [tool.maturin]
 module-name = "sigil._sigil_core"
+manifest-path = "src/sigil_core/Cargo.toml"
+python-source = "src"
 features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
