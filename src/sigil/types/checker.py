@@ -389,8 +389,8 @@ class TypeChecker:
             return
 
         if isinstance(expr, ast.ConstructorExpr):
-            for f in expr.fields:
-                self._check_expr(f.value, scope, param_types)
+            for af in expr.fields:
+                self._check_expr(af.value, scope, param_types)
             return
 
         if isinstance(expr, ast.IndexAccess):

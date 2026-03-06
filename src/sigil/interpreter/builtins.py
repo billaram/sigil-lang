@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from sigil.interpreter.values import Value, format_value
 
 if TYPE_CHECKING:
     from sigil.interpreter.trace import ProgramTrace
+
+BuiltinFn = Callable[["list[Value]", "ProgramTrace"], Value]
 
 
 def builtin_print(args: list[Value], trace: ProgramTrace) -> Value:
@@ -54,7 +57,7 @@ def builtin_len(args: list[Value], _trace: ProgramTrace) -> Value:
 
 
 # Registry of built-in functions
-BUILTINS: dict[str, object] = {
+BUILTINS: dict[str, BuiltinFn] = {
     "print": builtin_print,
     "max": builtin_max,
     "min": builtin_min,
@@ -62,7 +65,7 @@ BUILTINS: dict[str, object] = {
 }
 
 # Dotted path builtins (e.g. math.max)
-DOTTED_BUILTINS: dict[str, object] = {
+DOTTED_BUILTINS: dict[str, BuiltinFn] = {
     "math.max": builtin_max,
     "math.min": builtin_min,
     "math.len": builtin_len,

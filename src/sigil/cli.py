@@ -1,8 +1,14 @@
 """Sigil command-line interface."""
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sigil.interpreter.values import Value
 
 
 def _cmd_lex(file: Path) -> None:
@@ -106,7 +112,7 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
         sys.exit(1)
 
     # Parse input data — top-level must be a dict of variable bindings
-    input_data: dict | None = None
+    input_data: dict[str, Value] | None = None
     if input_json:
         raw = json.loads(input_json)
         if not isinstance(raw, dict):
@@ -131,18 +137,18 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
             print(format_value(result))
 
 
-def _json_to_sigil(obj: object) -> object:
+def _json_to_sigil(obj: object) -> Value:
     """Convert JSON-parsed data to Sigil values (Record, Symbol, etc.)."""
     from sigil.interpreter.values import Record, Symbol
 
     if isinstance(obj, dict):
-        fields = {k: _json_to_sigil(v) for k, v in obj.items()}
+        fields: dict[str, Value] = {k: _json_to_sigil(v) for k, v in obj.items()}
         return Record(type_name=None, fields=fields)
     if isinstance(obj, list):
         return [_json_to_sigil(v) for v in obj]
     if isinstance(obj, str) and obj.startswith(":"):
         return Symbol(obj[1:])
-    return obj
+    return obj  # type: ignore[return-value]  # JSON primitives (int, float, str, bool, None) are valid Values
 
 
 def main() -> None:

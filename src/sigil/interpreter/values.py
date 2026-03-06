@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ class Variant:
 
 
 # The Value union — all possible runtime values in Sigil
-Value = int | float | str | bool | None | Symbol | Record | Variant | list
+Value = int | float | str | bool | None | Symbol | Record | Variant | list[Any]
 
 # Sentinel for unbound variables
 _UNBOUND = object()

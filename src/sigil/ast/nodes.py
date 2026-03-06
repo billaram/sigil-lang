@@ -260,7 +260,7 @@ class Action(Node):
 
 
 @dataclass(frozen=True)
-class SimpleAction(Node):
+class SimpleAction(Action):
     """Simple action like 'alert' or 'trigger alert with severity :critical'."""
     name: str
     target: str | None = None  # e.g. "alert" in "trigger alert"
@@ -274,14 +274,14 @@ class ActionParam(Node):
 
 
 @dataclass(frozen=True)
-class SetAction(Node):
+class SetAction(Action):
     """Action that sets a value: 'age_eligible is true'."""
     target: Expression
     value: Expression
 
 
 @dataclass(frozen=True)
-class BlockAction(Node):
+class BlockAction(Action):
     """Block action (then: with indented body)."""
     body: tuple[Statement, ...]
 

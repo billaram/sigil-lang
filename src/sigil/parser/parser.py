@@ -388,7 +388,7 @@ class Parser:
             # Wrap in compound condition
             conditions.append(cond)
             conditions[-1] = ast.CompoundCond(
-                location=op_tok.line and SourceLocation(
+                location=SourceLocation(
                     self.filename, op_tok.line, op_tok.column
                 ),
                 operator=op_tok.value,
@@ -729,13 +729,13 @@ class Parser:
             self._advance()
             # Could be "X is <constructor> with ..." or "X is <value>"
             value = self._parse_action_value()
-            target = ast.Identifier(
+            target_id = ast.Identifier(
                 location=SourceLocation(self.filename, name_tok.line, name_tok.column),
                 name=name,
             )
-            return ast.SetAction(location=loc, target=target, value=value)
+            return ast.SetAction(location=loc, target=target_id, value=value)
 
-        target = None
+        target: str | None = None
         # Check if next is an identifier (e.g. "trigger alert", "log status")
         if self._check(TokenType.IDENTIFIER):
             # Peek further: if followed by "with" or "is" or newline, it's a target
@@ -747,6 +747,7 @@ class Parser:
             if self._check(TokenType.IS):
                 self._advance()
                 value = self._parse_action_value()
+                assert target is not None
                 target_expr = ast.FieldAccess(
                     location=SourceLocation(
                         self.filename, name_tok.line, name_tok.column

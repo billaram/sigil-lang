@@ -16,9 +16,16 @@ from sigil.interpreter.trace import (
     ProgramTrace,
     RuleTrace,
     TraceTimer,
-    format_value,
 )
-from sigil.interpreter.values import _UNBOUND, Record, Symbol, Value, Variant, values_equal
+from sigil.interpreter.values import (
+    _UNBOUND,
+    Record,
+    Symbol,
+    Value,
+    Variant,
+    format_value,
+    values_equal,
+)
 
 
 class ReturnSignal(Exception):  # noqa: N818 — not an error, it's a control flow signal
@@ -857,7 +864,8 @@ class Evaluator:
         index = self.eval_expression(expr.index, env)
         if isinstance(obj, list) and isinstance(index, int):
             if 0 <= index < len(obj):
-                return obj[index]
+                result: Value = obj[index]
+                return result
             msg = f"Index {index} out of range for list of length {len(obj)}"
             raise SigilRuntimeError(msg)
         msg = f"Cannot index {type(obj).__name__} with {type(index).__name__}"

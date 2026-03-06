@@ -26,6 +26,7 @@
 - [x] Virtual environment at `.venv` (Python 3.14.3)
 - [x] Rust crate (`src/sigil_core/`) — PyO3 module loading, `__version__` exposed
 - [x] Linting passes — `ruff check src/ tests/` clean
+- [x] mypy passes — `mypy src/sigil/` clean (0 errors, 21 files)
 - [ ] CI pipeline — NOT YET CREATED
 
 ### Example Programs (5 Complete)
@@ -127,10 +128,10 @@ All serve as acceptance criteria — all 5 lex and parse successfully:
 ## Known Issues / Open Questions
 
 1. ~~Rust not installed~~: **Resolved** — Rust 1.94.0 installed, maturin build working with PyO3 0.25
-2. **Grammar doc needs updating**: `docs/spec/GRAMMAR.peg` should reflect the 8 gaps found
-3. **Pipeline parsing**: Partially implemented but not exercised by current examples
+2. ~~Grammar doc needs updating~~: **Resolved** — GRAMMAR.peg v0.2 reflects all 8 parser gaps
+3. **Pipeline parsing**: Lexer/AST scaffolding exists (`|>`, `PipelineExpr`, `PipeOp`) but parser never produces it and interpreter can't run it — Phase 2 work
 4. **CI pipeline**: Not yet set up (GitHub Actions)
-5. **mypy**: Not yet run on the codebase
+5. ~~mypy~~: **Resolved** — 0 errors across 21 source files (17 errors fixed)
 6. **Neural stubs**: Phase 1 interpreter will use fallback values, real model loading in Phase 3
 
 ---
