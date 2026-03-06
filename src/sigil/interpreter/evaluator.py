@@ -38,6 +38,45 @@ class Evaluator:
         self._neural_funcs: dict[str, ast.NeuralDecl] = {}
         self._type_defs: dict[str, ast.TypeDecl] = {}
 
+    def eval_program_repl(
+        self,
+        program: ast.Program,
+        env: Environment,
+        rules: list[ast.RuleDecl],
+    ) -> tuple[Value, ProgramTrace, Environment]:
+        """Evaluate a program fragment for REPL mode.
+
+        Accepts existing environment and rule list; returns updated environment.
+        Fresh ProgramTrace per input.
+        """
+        self.trace = ProgramTrace()
+
+        # Register new declarations
+        for decl in program.declarations:
+            if isinstance(decl, ast.ConstDecl):
+                val = self.eval_expression(decl.value, env)
+                env = env.set(decl.name, val)
+            elif isinstance(decl, ast.TypeDecl):
+                self._type_defs[decl.name] = decl
+            elif isinstance(decl, ast.ComputeDecl):
+                self._compute_funcs[decl.name] = decl
+            elif isinstance(decl, ast.NeuralDecl):
+                self._neural_funcs[decl.name] = decl
+
+        # Collect new rules
+        for decl in program.declarations:
+            if isinstance(decl, ast.RuleDecl):
+                rules.append(decl)
+
+        # Execute main block if present
+        result: Value = None
+        for decl in program.declarations:
+            if isinstance(decl, ast.MainDecl):
+                result, env = self._eval_main(decl, rules, env)
+
+        self.trace.final_result = result
+        return result, self.trace, env
+
     def eval_program(
         self, program: ast.Program, input_data: dict[str, Value] | None = None,
     ) -> tuple[Value, ProgramTrace]:

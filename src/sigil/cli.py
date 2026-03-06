@@ -47,6 +47,42 @@ def _cmd_parse_ast(file: Path) -> None:
     print(dump(program))
 
 
+def _cmd_check(file: Path) -> None:
+    """Type-check a .sigil file."""
+    from sigil.errors import SigilError
+    from sigil.lexer import tokenize
+    from sigil.parser import parse
+    from sigil.types.checker import Severity, check
+
+    if not file.exists():
+        print(f"[sigil] Error: file not found: {file}", file=sys.stderr)
+        sys.exit(1)
+
+    source = file.read_text()
+    try:
+        tokens = tokenize(source, str(file))
+        program = parse(tokens, str(file))
+    except SigilError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    result = check(program)
+
+    for diag in result.diagnostics:
+        severity = "error" if diag.severity == Severity.ERROR else "warning"
+        print(f"{diag.location}: {severity}: {diag.message}")
+        if diag.suggestion:
+            print(f"  hint: {diag.suggestion}")
+
+    if result.has_errors:
+        print(f"\n{result.error_count} error(s), {result.warning_count} warning(s)")
+        sys.exit(1)
+    elif result.warning_count > 0:
+        print(f"\n{result.warning_count} warning(s)")
+    else:
+        print(f"[sigil] {file}: no issues found")
+
+
 def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) -> None:
     """Run a .sigil program."""
     import json
@@ -161,26 +197,16 @@ def main() -> None:
         _cmd_run(args.file, trace=args.trace, input_json=args.input)
 
     elif args.command == "repl":
-        print("Sigil REPL v0.1.0")
-        print("Type 'exit' to quit.\n")
-        while True:
-            try:
-                line = input("sigil> ")
-                if line.strip() in ("exit", "quit"):
-                    break
-                print(f"  [parse] {line}")
-                print("  [eval]  Interpreter not yet implemented.")
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
+        from sigil.interpreter.repl import run_repl
+
+        run_repl()
 
     elif args.command == "parse":
         print(f'[sigil] Parsing: "{args.text}"')
         print("[sigil] NL→Sigil parser not yet implemented. See docs/ROADMAP.md for Phase 4.")
 
     elif args.command == "check":
-        print(f"[sigil] Type-checking {args.file}...")
-        print("[sigil] Type checker not yet implemented. See docs/ROADMAP.md for Phase 1.")
+        _cmd_check(args.file)
 
     elif args.command == "fmt":
         print(f"[sigil] Formatting {args.file}...")

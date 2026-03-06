@@ -1,9 +1,9 @@
 # Project Status — KEEP THIS UPDATED
 
 > **Last updated**: 2026-03-06
-> **Current phase**: Phase 1 (Minimal Language) — Sprint 2 nearly complete
-> **Current sprint**: PRP/mar-phase1-sprint2.md (Type Checker + Interpreter)
-> **Next milestone**: Basic type checker, REPL → close Phase 1
+> **Current phase**: Phase 1 (Minimal Language) — COMPLETE
+> **Current sprint**: PRP/mar-phase1-sprint2.md (Type Checker + REPL) — DONE
+> **Next milestone**: Phase 2 (Core Language)
 
 ---
 
@@ -63,26 +63,37 @@ All serve as acceptance criteria — all 5 lex and parse successfully:
   - Neural stubs (return fallback values)
   - All 5 example programs execute correctly
 - `src/sigil/cli.py` — `sigil run` with --input (JSON) and --trace flags
+- All 5 example programs execute correctly
+
+### Type Checker (Complete — Sprint 2)
+- `src/sigil/types/checker.py` — Two-phase type checker (~300 lines):
+  - Phase 1: Scan declarations, build symbol table, collect settable names
+  - Phase 2: Walk bodies checking for 5 error types
+  - Check #1: Undefined variables (with conservative scope: builtins, declarations, settable names, field-access bases)
+  - Check #2: Undefined fields (on typed compute params with record type annotations)
+  - Check #3: Comparison type mismatches (non-numeric operands in numeric comparisons)
+  - Check #4: Function arity (compute, neural, builtin)
+  - Check #5: Duplicate declarations
+  - All 5 example programs pass with zero errors
+- `src/sigil/cli.py` — `sigil check` command with diagnostics output
+
+### REPL (Complete — Sprint 2)
+- `src/sigil/interpreter/repl.py` — Interactive REPL (~200 lines):
+  - `ReplSession` class with persistent state (env, rules, compute funcs, types)
+  - Input classification: declarations parse as-is, statements/expressions wrapped in main block
+  - Multi-line detection (colon continuation, unbalanced brackets)
+  - Special commands: `:env`, `:rules`, `:funcs`, `:types`, `:trace`, `:reset`, `:help`
+  - Error recovery: lex/parse/runtime errors caught and printed, REPL continues
+- `src/sigil/interpreter/evaluator.py` — `eval_program_repl()` method for persistent evaluation
+- `src/sigil/cli.py` — `sigil repl` command
 
 ### Test Suite
-- **303 tests total**, all passing:
+- **373 tests total**, all passing:
   - 91 lexer tests
   - 75 parser tests
   - 137 interpreter tests (values, environment, evaluator, integration)
-
----
-
-## What's Being Built Now (Sprint 2 — remaining)
-
-### Type Checker (Milestone 1.3 — light version)
-- [ ] Undefined variable detection
-- [ ] Undefined field access detection
-- [ ] Comparison type validation
-- [ ] Function arity checking
-- [ ] Duplicate declaration detection
-
-### REPL
-- [ ] `sigil repl` interactive shell with interpreter
+  - 31 REPL tests (session, declarations, commands, errors, multi-line)
+  - 39 type checker tests (5 checks + integration with all 5 examples)
 
 ---
 
