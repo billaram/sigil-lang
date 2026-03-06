@@ -1,9 +1,10 @@
 # Project Status — KEEP THIS UPDATED
 
 > **Last updated**: 2026-03-06
-> **Current phase**: Phase 1 (Minimal Language) — COMPLETE
-> **Current sprint**: PRP/mar-phase1-sprint2.md (Type Checker + REPL) — DONE
-> **Next milestone**: Phase 2 (Core Language)
+> **Current phase**: Phase 2 (Core Language) — STARTING
+> **Current sprint**: PRP/phase2-sprint1.md (Pattern Matching + Pipeline + Closures)
+> **Sprint plans**: phase2-sprint1.md → phase2-sprint2.md → phase2-sprint3.md
+> **Previous phase**: Phase 1 (Minimal Language) — COMPLETE
 
 ---
 
@@ -14,7 +15,8 @@
 - Formal PEG grammar (validated against 5 examples — 8 gaps found and fixed in parser)
 - Operational semantics
 - 8 research documents + 65-reference bibliography
-- Sprint plans: `PRP/mar-phase1-sprint1.md` (done), `PRP/mar-phase1-sprint2.md` (active)
+- Sprint plans: `PRP/mar-phase1-sprint1.md` (done), `PRP/mar-phase1-sprint2.md` (done)
+- Phase 2 plans: `PRP/phase2-sprint1.md`, `PRP/phase2-sprint2.md`, `PRP/phase2-sprint3.md`
 
 ### Project Infrastructure (Working)
 - [x] Git repo initialized on `main` branch
@@ -113,13 +115,29 @@ All serve as acceptance criteria — all 5 lex and parse successfully:
 
 ---
 
-## What's After Phase 1
+## Phase 2 Plan (3 Sprints, ~6 weeks)
 
-### Phase 2: Core Language (est. 6 weeks):
-- Advanced compute: pattern matching, closures, pipeline operator
-- Module system: imports, exports, circular dependency detection
-- Advanced rules: backward chaining, temporal rules
-- Standard library: math, text, logic, time, trace, io, types
+### Sprint 1: Language Features (PRP/phase2-sprint1.md)
+- Match expression evaluation (parser done, evaluator needed)
+- Pipeline operator `|>` end-to-end (parser + evaluator)
+- Closures and higher-order functions (function values, lambdas)
+- Enhanced type checker (3 new checks: match, pipeline, closures)
+- 6+ new examples, 80+ new tests → 450+ total
+
+### Sprint 2: Module System + Stdlib (PRP/phase2-sprint2.md)
+- Module resolver (file system), loader (caching), cycle detection
+- Import/export evaluation, visibility
+- Standard library: sigil.math, sigil.text, sigil.list, sigil.logic
+- Python FFI stubs
+- 5+ multi-file examples, 70+ new tests → 520+ total
+
+### Sprint 3: Advanced Rules + Polish (PRP/phase2-sprint3.md)
+- Backward chaining engine (goal-driven evaluation)
+- Temporal rule foundations (within constraints, stored not enforced)
+- Standard library: sigil.time, sigil.trace, sigil.io
+- Enhanced type inference (return types, gradual, unit awareness)
+- Performance benchmarks
+- 80+ new tests → 600+ total
 
 ### Phase 3+: See `docs/ROADMAP.md`
 
