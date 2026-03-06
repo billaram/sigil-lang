@@ -1,9 +1,9 @@
 # Project Status — KEEP THIS UPDATED
 
 > **Last updated**: 2026-03-06
-> **Current phase**: Phase 1 (Minimal Language) — Lexer + Parser complete
-> **Current sprint**: PRP/mar1-mar15.md
-> **Next milestone**: AST ↔ S-expression, type checker, interpreter
+> **Current phase**: Phase 1 (Minimal Language) — Sprint 2 nearly complete
+> **Current sprint**: PRP/mar-phase1-sprint2.md (Type Checker + Interpreter)
+> **Next milestone**: Basic type checker, REPL → close Phase 1
 
 ---
 
@@ -14,7 +14,7 @@
 - Formal PEG grammar (validated against 5 examples — 8 gaps found and fixed in parser)
 - Operational semantics
 - 8 research documents + 65-reference bibliography
-- Sprint plan (PRP/mar1-mar15.md)
+- Sprint plans: `PRP/mar-phase1-sprint1.md` (done), `PRP/mar-phase1-sprint2.md` (active)
 
 ### Project Infrastructure (Working)
 - [x] Git repo initialized on `main` branch
@@ -36,54 +36,78 @@ All serve as acceptance criteria — all 5 lex and parse successfully:
 4. `examples/neuro_symbolic/medical_triage.sigil` (91 lines) — neural + quantifiers
 5. `examples/neuro_symbolic/compliance_checker.sigil` (95 lines) — complex conditions
 
-### Lexer (Complete — 91 tests)
+### Lexer (Complete — Sprint 1)
 - `src/sigil/errors.py` — Error hierarchy + SourceLocation
 - `src/sigil/lexer/tokens.py` — TokenType enum (80+ keywords), Token dataclass, UNIT_SUFFIXES
 - `src/sigil/lexer/lexer.py` — Full tokenizer with indentation engine
-- Features: numbers (int/float/underscore), strings (regular/triple-quoted/escape), symbols, keywords, operators, delimiters, comments (single/multi/doc/nested), unit suffixes, tabs rejected
-- `tests/lexer/test_lexer.py` — 91 tests, all passing
+- 91 tests, all passing
 
-### Parser (Complete — 75 tests)
+### Parser (Complete — Sprint 1)
 - `src/sigil/ast/nodes.py` — Full AST node definitions (40+ frozen dataclasses)
 - `src/sigil/parser/parser.py` — Recursive descent parser
-- Features: all declaration types (type/const/rule/compute/neural/main), conditions (12 variants), expressions (precedence climbing, field access, function calls, pipelines, match), statements (given/return/if/for/becomes/evaluate), actions (simple/set/block)
-- `tests/parser/test_parser.py` — 75 tests, all passing
-- All 5 examples parse into correct ASTs
+- 75 tests, all passing, all 5 examples parse correctly
+
+### Interpreter (Complete — Sprint 2)
+- `src/sigil/interpreter/values.py` — Symbol, Record, Variant, Value union, format_value, values_equal
+- `src/sigil/interpreter/environment.py` — Immutable environment with scope chain
+- `src/sigil/interpreter/trace.py` — ConditionTrace, RuleTrace, ProgramTrace, TraceTimer, format_trace
+- `src/sigil/interpreter/builtins.py` — print, max, min, len builtins
+- `src/sigil/interpreter/evaluator.py` — Full tree-walking evaluator (~930 lines):
+  - Expression evaluator (12+ types: literals, field access, binary ops, function calls, etc.)
+  - Condition evaluator (12 condition types with short-circuit AND/OR)
+  - Rule evaluator (priority-based forward chaining, max 100 iterations)
+  - Action evaluator (simple, set, block)
+  - Statement evaluator (given, return, if, for, becomes, evaluate)
+  - Compute function evaluator with return signal
+  - String interpolation in explain clauses
+  - Neural stubs (return fallback values)
+  - All 5 example programs execute correctly
+- `src/sigil/cli.py` — `sigil run` with --input (JSON) and --trace flags
 
 ### Test Suite
-- **166 tests total**, all passing
-- `tests/conftest.py` — shared fixtures for all 5 example files
-- Lexer: 91 unit + integration tests
-- Parser: 75 unit + integration tests
+- **303 tests total**, all passing:
+  - 91 lexer tests
+  - 75 parser tests
+  - 137 interpreter tests (values, environment, evaluator, integration)
 
 ---
 
-## Grammar Gaps Found and Fixed
+## What's Being Built Now (Sprint 2 — remaining)
+
+### Type Checker (Milestone 1.3 — light version)
+- [ ] Undefined variable detection
+- [ ] Undefined field access detection
+- [ ] Comparison type validation
+- [ ] Function arity checking
+- [ ] Duplicate declaration detection
+
+### REPL
+- [ ] `sigil repl` interactive shell with interpreter
+
+---
+
+## Grammar Gaps Found and Fixed (Sprint 1)
 
 8 gaps between GRAMMAR.peg and the 5 example programs, all handled in the parser:
 
-1. **Space-based field access**: `reading temperature` → `reading.temperature` (consecutive identifiers as field access)
+1. **Space-based field access**: `reading temperature` → `reading.temperature`
 2. **Parameterless compute**: `compute NAME returns TYPE:` without `from` clause
 3. **`becomes` keyword**: Assignment operator (`y becomes y + [...]`)
 4. **`empty list` / `empty`**: Expression for empty collections
 5. **`is not assigned`**: Special condition for null/unset checks
 6. **Nested inline records**: `vital_signs: record:` inside another record
 7. **Actions as variable setting**: `then age_eligible is true` → SetAction
-8. **Multi-word actions + positional args**: `trigger alert with severity :high`, `log status :normal`
+8. **Multi-word actions + positional args**: `trigger alert with severity :high`
 
 ---
 
-## What's Next (After This Sprint)
-
-### Phase 1 remainder (est. 2 more weeks):
-- Milestone 1.3: AST ↔ S-expression conversion, basic type checker
-- Milestone 1.4: Tree-walking interpreter, REPL, trace generation
+## What's After Phase 1
 
 ### Phase 2: Core Language (est. 6 weeks):
-- Compute blocks, control flow, pattern matching
-- Module system
-- Advanced rules (priority, composition, backward chaining)
-- Standard library
+- Advanced compute: pattern matching, closures, pipeline operator
+- Module system: imports, exports, circular dependency detection
+- Advanced rules: backward chaining, temporal rules
+- Standard library: math, text, logic, time, trace, io, types
 
 ### Phase 3+: See `docs/ROADMAP.md`
 
@@ -92,10 +116,11 @@ All serve as acceptance criteria — all 5 lex and parse successfully:
 ## Known Issues / Open Questions
 
 1. ~~Rust not installed~~: **Resolved** — Rust 1.94.0 installed, maturin build working with PyO3 0.25
-2. **Grammar doc needs updating**: `docs/spec/GRAMMAR.peg` should be updated to reflect the 8 gaps found
+2. **Grammar doc needs updating**: `docs/spec/GRAMMAR.peg` should reflect the 8 gaps found
 3. **Pipeline parsing**: Partially implemented but not exercised by current examples
 4. **CI pipeline**: Not yet set up (GitHub Actions)
 5. **mypy**: Not yet run on the codebase
+6. **Neural stubs**: Phase 1 interpreter will use fallback values, real model loading in Phase 3
 
 ---
 
@@ -108,8 +133,9 @@ All serve as acceptance criteria — all 5 lex and parse successfully:
 | 2026-03-06 | Syntax: Constrained NL | Readable + parseable + LLM-generable | S-expressions, ML-style, hybrid |
 | 2026-03-06 | Impl: Tree-walking first | Proven path; fast iteration | Bytecode VM, transpiler |
 | 2026-03-06 | Parser: Hand-written RD | Maximum control; educational; debuggable | PEG library, parser combinators |
-| 2026-03-06 | Build: setuptools (temp) | Rust not installed; maturin deferred to Phase 2+ | Block on Rust install |
+| 2026-03-06 | Build: maturin + PyO3 0.25 | Rust 1.94.0 installed; Python 3.14 support | setuptools (used temporarily) |
 | 2026-03-06 | Grammar: Examples drive spec | 8 grammar gaps found; examples are ground truth | Strict grammar-first |
+| 2026-03-06 | Type checker: Light for Phase 1 | Catch obvious errors, defer full inference to Phase 2 | Full gradual types upfront |
 
 ---
 

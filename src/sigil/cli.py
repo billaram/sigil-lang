@@ -47,6 +47,68 @@ def _cmd_parse_ast(file: Path) -> None:
     print(dump(program))
 
 
+def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) -> None:
+    """Run a .sigil program."""
+    import json
+
+    from sigil.errors import SigilError
+    from sigil.interpreter.evaluator import evaluate
+    from sigil.interpreter.trace import format_trace
+    from sigil.lexer import tokenize
+    from sigil.parser import parse
+
+    if not file.exists():
+        print(f"[sigil] Error: file not found: {file}", file=sys.stderr)
+        sys.exit(1)
+
+    source = file.read_text()
+    try:
+        tokens = tokenize(source, str(file))
+        program = parse(tokens, str(file))
+    except SigilError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Parse input data — top-level must be a dict of variable bindings
+    input_data: dict | None = None
+    if input_json:
+        raw = json.loads(input_json)
+        if not isinstance(raw, dict):
+            print("[sigil] Error: --input must be a JSON object", file=sys.stderr)
+            sys.exit(1)
+        input_data = {k: _json_to_sigil(v) for k, v in raw.items()}
+
+    try:
+        result, program_trace = evaluate(program, input_data)
+    except SigilError as e:
+        print(f"[sigil] Runtime error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Output
+    if trace:
+        print(format_trace(program_trace))
+    else:
+        for line in program_trace.output_lines:
+            print(line)
+        if result is not None and not program_trace.output_lines:
+            from sigil.interpreter.values import format_value
+            print(format_value(result))
+
+
+def _json_to_sigil(obj: object) -> object:
+    """Convert JSON-parsed data to Sigil values (Record, Symbol, etc.)."""
+    from sigil.interpreter.values import Record, Symbol
+
+    if isinstance(obj, dict):
+        fields = {k: _json_to_sigil(v) for k, v in obj.items()}
+        return Record(type_name=None, fields=fields)
+    if isinstance(obj, list):
+        return [_json_to_sigil(v) for v in obj]
+    if isinstance(obj, str) and obj.startswith(":"):
+        return Symbol(obj[1:])
+    return obj
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sigil",
@@ -66,6 +128,7 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="Execute a Sigil program")
     run_parser.add_argument("file", type=Path, help="Path to .sigil file")
     run_parser.add_argument("--trace", action="store_true", help="Show execution trace")
+    run_parser.add_argument("--input", type=str, default=None, help="Input data as JSON")
 
     # sigil repl
     subparsers.add_parser("repl", help="Start interactive Sigil REPL")
@@ -95,8 +158,7 @@ def main() -> None:
         _cmd_parse_ast(args.file)
 
     elif args.command == "run":
-        print(f"[sigil] Running {args.file}...")
-        print("[sigil] Interpreter not yet implemented. See docs/ROADMAP.md for Phase 1.")
+        _cmd_run(args.file, trace=args.trace, input_json=args.input)
 
     elif args.command == "repl":
         print("Sigil REPL v0.1.0")
