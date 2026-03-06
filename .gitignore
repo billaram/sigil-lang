@@ -34,6 +34,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Docs build output
+lang-docs/site/
+
 # Sigil build artifacts
 *.sigil.compiled
 *.sigil.trace

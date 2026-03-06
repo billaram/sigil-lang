@@ -1,4 +1,4 @@
-# Sigil PEG Grammar (Draft v0.1)
+# Sigil PEG Grammar (Draft v0.2)
 #
 # This is the formal grammar specification for the Sigil programming language.
 # It uses PEG (Parsing Expression Grammar) notation.
@@ -64,7 +64,9 @@ TypeBody        <- RecordType
 
 RecordType      <- 'record' ':' NEWLINE INDENT (FieldDecl NEWLINE)+ DEDENT
 
-FieldDecl       <- Identifier ':' Spacing TypeRef
+FieldDecl       <- Identifier ':' Spacing (InlineRecordType / TypeRef)
+
+InlineRecordType <- 'record' ':' NEWLINE INDENT (FieldDecl NEWLINE)+ DEDENT
 
 EnumType        <- 'one' Spacing 'of' ':' NEWLINE INDENT (EnumVariant NEWLINE)+ DEDENT
 
@@ -128,10 +130,13 @@ UsingClause     <- 'using' Spacing 'rust' (Spacing RustPath)?
 # ============================================================
 
 Condition       <- QuantifiedCond
+                 / AssignedCond
                  / ComparisonCond
                  / MembershipCond
                  / StringCond
                  / BooleanCond
+
+AssignedCond    <- Expression Spacing 'is' (Spacing 'not')? Spacing 'assigned'
 
 QuantifiedCond  <- ('any' / 'all' / 'none') Spacing Identifier Spacing
                    'in' Spacing Expression Spacing
@@ -166,7 +171,16 @@ BooleanCond     <- Expression Spacing 'is' Spacing 'true'
 # Actions
 # ============================================================
 
-Action          <- Identifier (Spacing 'with' Spacing ActionParams)?
+Action          <- SetAction
+                 / SimpleAction
+                 / Expression
+
+SetAction       <- Identifier Spacing 'is' Spacing ActionValue
+
+SimpleAction    <- Identifier (Spacing Identifier)? (Spacing 'with' Spacing ActionParams)?
+                 / Identifier (Spacing Identifier)? Spacing Expression
+
+ActionValue     <- Identifier Spacing 'with' Spacing ActionParams
                  / Expression
 
 ActionParams    <- Identifier ':' Spacing Expression
@@ -176,8 +190,8 @@ ActionParams    <- Identifier ':' Spacing Expression
 # Compute Declarations (Functions)
 # ============================================================
 
-ComputeDecl     <- 'compute' Spacing Identifier Spacing
-                   'from' Spacing ParamList
+ComputeDecl     <- 'compute' Spacing Identifier
+                   (Spacing 'from' Spacing ParamList)?
                    (Spacing 'returns' Spacing TypeRef)? ':' NEWLINE
                    INDENT (Statement NEWLINE)+ DEDENT
 
@@ -217,8 +231,11 @@ Statement       <- GivenStatement
                  / ReturnStatement
                  / IfStatement
                  / ForStatement
+                 / BecomesStatement
                  / EvaluateStatement
                  / ExpressionStatement
+
+BecomesStatement <- Expression Spacing 'becomes' Spacing Expression
 
 GivenStatement  <- 'given' Spacing Identifier Spacing 'as' Spacing Expression
                  / 'given' Spacing Identifier Spacing 'from' Spacing Expression
@@ -267,9 +284,10 @@ UnaryExpr       <- 'not' Spacing UnaryExpr
                  / '-' Spacing UnaryExpr
                  / PostfixExpr
 
-PostfixExpr     <- PrimaryExpr (FieldAccess / FuncCall / IndexAccess)*
+PostfixExpr     <- PrimaryExpr (FieldAccess / FuncCall / IndexAccess / SpaceFieldAccess)*
 
 FieldAccess     <- '.' Identifier
+SpaceFieldAccess <- Spacing Identifier    # "reading temperature" → reading.temperature
 FuncCall        <- '(' Spacing ArgList? Spacing ')'
 IndexAccess     <- '[' Spacing Expression Spacing ']'
 
@@ -284,9 +302,12 @@ PrimaryExpr     <- NumberLiteral UnitSuffix?
                  / SymbolLiteral
                  / ListLiteral
                  / RecordLiteral
+                 / EmptyExpr
                  / 'none'
                  / MatchExpr
                  / Identifier
+
+EmptyExpr       <- 'empty' (Spacing 'list')?
 
 # ============================================================
 # Match Expression
@@ -343,6 +364,7 @@ Keyword         <- ('rule' / 'when' / 'then' / 'and' / 'or' / 'not'
                  / 'main' / 'has' / 'have' / 'private' / 'mutable'
                  / 'try' / 'on' / 'error' / 'fallback' / 'to'
                  / 'returns' / 'record' / 'one' / 'of'
+                 / 'becomes' / 'empty' / 'assigned' / 'list'
                  ) !IdentChar
 
 IdentChar       <- [a-zA-Z0-9_]
