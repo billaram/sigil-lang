@@ -1,0 +1,37 @@
+-- Data processing with pipelines and pattern matching
+-- Demonstrates: combining pipeline, match, compute
+
+type Employee is record:
+  name: Text
+  department: Symbol
+  salary: Number
+  years: Number
+
+define employees as [
+  {name: "Alice", department: :engineering, salary: 120000, years: 8},
+  {name: "Bob", department: :marketing, salary: 85000, years: 3},
+  {name: "Charlie", department: :engineering, salary: 105000, years: 5},
+  {name: "Diana", department: :sales, salary: 92000, years: 7},
+  {name: "Eve", department: :engineering, salary: 135000, years: 12},
+  {name: "Frank", department: :marketing, salary: 78000, years: 2}
+]
+
+compute bonus_rate from dept: Symbol returns Number:
+  return match dept:
+    :engineering -> 15
+    :sales -> 12
+    :marketing -> 10
+    _ -> 8
+
+main:
+  -- Senior engineers (5+ years, engineering dept)
+  given senior_engineers as employees |> filter where department is :engineering |> filter where years exceeds 4 |> sort by salary descending
+  print(len(senior_engineers))
+
+  -- All engineering salaries
+  given eng_salaries as employees |> filter where department is :engineering |> map to salary
+  print(eng_salaries)
+
+  -- Bonus rate lookup
+  given rate as bonus_rate(:engineering)
+  print(rate)

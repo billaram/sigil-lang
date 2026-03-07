@@ -19,6 +19,7 @@ from sigil.interpreter.trace import (
 )
 from sigil.interpreter.values import (
     _UNBOUND,
+    Closure,
     Record,
     Symbol,
     Value,
@@ -44,6 +45,10 @@ class Evaluator:
         self._compute_funcs: dict[str, ast.ComputeDecl] = {}
         self._neural_funcs: dict[str, ast.NeuralDecl] = {}
         self._type_defs: dict[str, ast.TypeDecl] = {}
+        self._exports: set[str] = set()
+        self._module_env: Environment = Environment()
+        self.module_loader: object | None = None  # ModuleLoader, set externally
+        self.filename: str = "<stdin>"
 
     def eval_program_repl(
         self,
@@ -91,6 +96,15 @@ class Evaluator:
         with TraceTimer() as timer:
             env = Environment(input_data or {})
 
+            # Process imports
+            for imp in program.imports:
+                env = self._eval_import(imp, env)
+
+            # Process export declarations
+            for decl in program.declarations:
+                if isinstance(decl, ast.ExportDecl):
+                    self._exports.update(decl.names)
+
             # Phase 1: Register declarations
             for decl in program.declarations:
                 if isinstance(decl, ast.ConstDecl):
@@ -102,6 +116,9 @@ class Evaluator:
                     self._compute_funcs[decl.name] = decl
                 elif isinstance(decl, ast.NeuralDecl):
                     self._neural_funcs[decl.name] = decl
+
+            # Save module environment (for module loading)
+            self._module_env = env
 
             # Phase 2: Find and run main block, or run all rules
             main_decl = None
@@ -121,6 +138,63 @@ class Evaluator:
         self.trace.final_result = result
         self.trace.total_duration_ms = timer.duration_ms
         return result, self.trace
+
+    # ------------------------------------------------------------------
+    # Imports
+    # ------------------------------------------------------------------
+
+    def _eval_import(
+        self, decl: ast.ImportDecl, env: Environment,
+    ) -> Environment:
+        """Evaluate an import declaration."""
+        from pathlib import Path
+
+        if self.module_loader is None:
+            # No module loader configured — try stdlib builtins directly
+            if decl.source.startswith("sigil."):
+                from sigil.stdlib import get_stdlib_module
+                try:
+                    module = get_stdlib_module(
+                        decl.source.removeprefix("sigil."),
+                    )
+                except Exception:
+                    return env
+            else:
+                return env
+        else:
+            from sigil.modules.loader import ModuleLoader
+            assert isinstance(self.module_loader, ModuleLoader)
+            module = self.module_loader.load(decl.source, Path(self.filename))
+
+        if decl.names:
+            # Selective import: from X import a, b, c
+            for name in decl.names:
+                if name not in module.exports:
+                    msg = f"'{name}' is not exported from module '{decl.source}'"
+                    raise SigilRuntimeError(msg)
+                val = module.env.get(name)
+                env = env.set(name, val)
+                # Also register compute funcs if available
+                if name in module.compute_funcs:
+                    self._compute_funcs[name] = module.compute_funcs[name]
+        elif decl.alias:
+            # Aliased import: import X as Y
+            module_record = Record(
+                type_name=decl.alias,
+                fields=dict(module.env.all_bindings()),
+            )
+            env = env.set(decl.alias, module_record)
+        else:
+            # Full import: import X — bind exported names directly
+            for name in module.exports:
+                val = module.env.get(name)
+                if val is not _UNBOUND:
+                    env = env.set(name, val)
+                # Also register compute funcs
+                if name in module.compute_funcs:
+                    self._compute_funcs[name] = module.compute_funcs[name]
+
+        return env
 
     # ------------------------------------------------------------------
     # Main block
@@ -685,6 +759,12 @@ class Evaluator:
             return self._eval_constructor(expr, env)
         if isinstance(expr, ast.IndexAccess):
             return self._eval_index_access(expr, env)
+        if isinstance(expr, ast.MatchExpr):
+            return self._eval_match(expr, env)
+        if isinstance(expr, ast.PipelineExpr):
+            return self._eval_pipeline(expr, env)
+        if isinstance(expr, ast.LambdaExpr):
+            return self._eval_lambda(expr, env)
         msg = f"Unknown expression type: {type(expr).__name__}"
         raise SigilRuntimeError(msg)
 
@@ -692,8 +772,17 @@ class Evaluator:
         """Look up an identifier in the environment."""
         val = env.get(expr.name)
         if val is _UNBOUND:
-            # Check for compute/neural functions (resolved at call time)
-            if expr.name in self._compute_funcs or expr.name in self._neural_funcs:
+            # Check for compute functions — return as Closure for higher-order use
+            if expr.name in self._compute_funcs:
+                decl = self._compute_funcs[expr.name]
+                return Closure(
+                    params=tuple(p.name for p in decl.params),
+                    body=decl.body,
+                    env=env,
+                    name=expr.name,
+                )
+            # Check for neural functions (resolved at call time)
+            if expr.name in self._neural_funcs:
                 return _UNBOUND  # type: ignore[return-value]
             # Check for enum variant names (no-field variants like 'clear')
             if expr.name in self._get_variant_names():
@@ -799,8 +888,12 @@ class Evaluator:
         if func_name in DOTTED_BUILTINS:
             return DOTTED_BUILTINS[func_name](args, self.trace)
 
-        # Check if the function value is a callable from the environment
+        # Check if the function expression resolves to a Closure
         func_val = self.eval_expression(expr.function, env)
+        if isinstance(func_val, Closure):
+            return self._call_closure(func_val, args)
+
+        # Check if the function value is a callable from the environment
         if callable(func_val):
             return func_val(args, self.trace)
 
@@ -870,6 +963,160 @@ class Evaluator:
             raise SigilRuntimeError(msg)
         msg = f"Cannot index {type(obj).__name__} with {type(index).__name__}"
         raise SigilRuntimeError(msg)
+
+    # ------------------------------------------------------------------
+    # Match expression
+    # ------------------------------------------------------------------
+
+    def _eval_match(self, expr: ast.MatchExpr, env: Environment) -> Value:
+        """Evaluate a match expression."""
+        subject_val = self.eval_expression(expr.subject, env)
+
+        for arm in expr.arms:
+            matched, bindings = self._match_pattern(arm.pattern, subject_val)
+            if matched:
+                body_env = env.extend(bindings) if bindings else env
+                return self.eval_expression(arm.body, body_env)
+
+        msg = "No matching pattern in match expression"
+        raise SigilRuntimeError(msg)
+
+    def _match_pattern(
+        self, pattern: ast.Expression, value: Value,
+    ) -> tuple[bool, dict[str, Value]]:
+        """Check if a pattern matches a value. Returns (matched, bindings)."""
+        # Wildcard: _ always matches, no binding
+        if isinstance(pattern, ast.Identifier) and pattern.name == "_":
+            return True, {}
+
+        # Literal pattern: compare values
+        if isinstance(pattern, ast.Literal):
+            return values_equal(value, pattern.value), {}
+
+        # Symbol pattern: compare symbol names
+        if isinstance(pattern, ast.SymbolLit):
+            if isinstance(value, Symbol) and value.name == pattern.name:
+                return True, {}
+            return False, {}
+
+        # Identifier pattern: always matches, binds the value
+        if isinstance(pattern, ast.Identifier):
+            return True, {pattern.name: value}
+
+        return False, {}
+
+    # ------------------------------------------------------------------
+    # Pipeline expression
+    # ------------------------------------------------------------------
+
+    def _eval_pipeline(self, expr: ast.PipelineExpr, env: Environment) -> Value:
+        """Evaluate a pipeline expression."""
+        source = self.eval_expression(expr.source, env)
+        if not isinstance(source, list):
+            msg = f"Pipeline source must be a list, got {type(source).__name__}"
+            raise SigilRuntimeError(msg)
+
+        result: list[Value] = source
+        for op in expr.operations:
+            result = self._eval_pipe_op(op, result, env)
+        return result
+
+    def _eval_pipe_op(
+        self, op: ast.PipeOp, items: list[Value], env: Environment,
+    ) -> list[Value]:
+        """Evaluate a single pipeline operation."""
+        if op.kind == "filter":
+            assert op.condition is not None
+            filtered: list[Value] = []
+            for item in items:
+                item_env = self._pipeline_item_env(item, env)
+                cond_result, _ = self._eval_condition(op.condition, item_env)
+                if cond_result:
+                    filtered.append(item)
+            return filtered
+
+        if op.kind == "sort":
+            field_name = op.args[0] if op.args else None
+            reverse = op.direction == "descending"
+            if isinstance(field_name, ast.Identifier):
+                fname = field_name.name
+                return sorted(
+                    items,
+                    key=lambda r: r.fields.get(fname, 0) if isinstance(r, Record) else r,  # type: ignore[arg-type,return-value]
+                    reverse=reverse,
+                )
+            if isinstance(field_name, ast.Literal) and isinstance(field_name.value, str):
+                fname_s = field_name.value
+                return sorted(
+                    items,
+                    key=lambda r: r.fields.get(fname_s, 0) if isinstance(r, Record) else r,  # type: ignore[arg-type,return-value]
+                    reverse=reverse,
+                )
+            return sorted(
+                items,
+                key=lambda x: x if isinstance(x, (int, float)) else 0,
+                reverse=reverse,
+            )
+
+        if op.kind == "take_first":
+            count = self.eval_expression(op.args[0], env) if op.args else 1
+            return items[:int(count)]  # type: ignore[arg-type]
+
+        if op.kind == "take_last":
+            count = self.eval_expression(op.args[0], env) if op.args else 1
+            return items[-int(count):]  # type: ignore[arg-type]
+
+        if op.kind == "map":
+            mapped: list[Value] = []
+            for item in items:
+                item_env = self._pipeline_item_env(item, env)
+                val = self.eval_expression(op.args[0], item_env)
+                mapped.append(val)
+            return mapped
+
+        msg = f"Unknown pipeline operation: {op.kind}"
+        raise SigilRuntimeError(msg)
+
+    def _pipeline_item_env(self, item: Value, env: Environment) -> Environment:
+        """Create environment for a pipeline item."""
+        if isinstance(item, Record):
+            bindings = dict(item.fields)
+            bindings["it"] = item
+            return env.extend(bindings)
+        return env.set("it", item)
+
+    # ------------------------------------------------------------------
+    # Closures and lambda
+    # ------------------------------------------------------------------
+
+    def _eval_lambda(self, expr: ast.LambdaExpr, env: Environment) -> Value:
+        """Evaluate a lambda expression to a Closure value."""
+        return Closure(
+            params=tuple(p.name for p in expr.params),
+            body=expr.body,
+            env=env,
+            name=None,
+        )
+
+    def _call_closure(
+        self, closure: Closure, args: list[Value],
+    ) -> Value:
+        """Call a closure with arguments."""
+        if len(args) != len(closure.params):
+            name = closure.name or "<anonymous>"
+            msg = f"{name} expects {len(closure.params)} args, got {len(args)}"
+            raise SigilRuntimeError(msg)
+
+        bindings = dict(zip(closure.params, args, strict=True))
+        func_env = closure.env.extend(bindings)
+
+        try:
+            for stmt in closure.body:
+                _, func_env = self._eval_statement(stmt, [], func_env)
+        except ReturnSignal as ret:
+            return ret.value
+
+        return None
 
     # ------------------------------------------------------------------
     # String interpolation

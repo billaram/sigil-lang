@@ -94,7 +94,6 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
     import json
 
     from sigil.errors import SigilError
-    from sigil.interpreter.evaluator import evaluate
     from sigil.interpreter.trace import format_trace
     from sigil.lexer import tokenize
     from sigil.parser import parse
@@ -120,8 +119,22 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
             sys.exit(1)
         input_data = {k: _json_to_sigil(v) for k, v in raw.items()}
 
+    # Configure module loader
+    from sigil.interpreter.evaluator import Evaluator
+    from sigil.modules.loader import ModuleLoader
+    from sigil.modules.resolver import ModuleResolver
+
+    project_root = file.resolve().parent
+    stdlib_root = Path(__file__).parent / "stdlib"
+    resolver = ModuleResolver(project_root, stdlib_root)
+    loader = ModuleLoader(resolver)
+
+    evaluator = Evaluator()
+    evaluator.module_loader = loader
+    evaluator.filename = str(file)
+
     try:
-        result, program_trace = evaluate(program, input_data)
+        result, program_trace = evaluator.eval_program(program, input_data)
     except SigilError as e:
         print(f"[sigil] Runtime error: {e}", file=sys.stderr)
         sys.exit(1)

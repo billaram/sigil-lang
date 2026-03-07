@@ -1,0 +1,20 @@
+-- Demonstrates importing multiple standard library modules
+import sigil.math
+import sigil.text
+import sigil.list
+
+main:
+  -- Use math
+  given hyp as sqrt(pow(3, 2) + pow(4, 2))
+  print("Hypotenuse: ")
+  print(hyp)
+
+  -- Use text
+  given greeting as uppercase("hello from sigil")
+  print(greeting)
+
+  -- Use list
+  given nums as range(1, 6)
+  given total as sum(nums)
+  print("Sum of 1..5: ")
+  print(total)

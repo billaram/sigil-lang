@@ -401,12 +401,69 @@ class TypeChecker:
         if isinstance(expr, ast.MatchExpr):
             self._check_expr(expr.subject, scope, param_types)
             for arm in expr.arms:
-                self._check_expr(arm.body, scope, param_types)
+                # Identifier patterns (non-wildcard) introduce bindings
+                arm_scope = set(scope)
+                if isinstance(arm.pattern, ast.Identifier) and arm.pattern.name != "_":
+                    arm_scope.add(arm.pattern.name)
+                self._check_expr(arm.body, arm_scope, param_types)
+            # Check #6: match exhaustiveness warning
+            self._check_match_exhaustiveness(expr)
             return
 
         if isinstance(expr, ast.PipelineExpr):
             self._check_expr(expr.source, scope, param_types)
+            # Check #7: pipeline operations
+            self._check_pipeline(expr, scope, param_types)
             return
+
+        if isinstance(expr, ast.LambdaExpr):
+            lambda_scope = set(scope)
+            for p in expr.params:
+                lambda_scope.add(p.name)
+            for stmt in expr.body:
+                lambda_scope = self._check_statement(stmt, lambda_scope, param_types)
+            return
+
+    # --- Check #6: Match exhaustiveness ---
+
+    def _check_match_exhaustiveness(self, expr: ast.MatchExpr) -> None:
+        """Warn if match expression might not be exhaustive."""
+        has_wildcard = any(
+            isinstance(arm.pattern, ast.Identifier) and arm.pattern.name == "_"
+            for arm in expr.arms
+        )
+        has_catchall_identifier = any(
+            isinstance(arm.pattern, ast.Identifier) and arm.pattern.name != "_"
+            for arm in expr.arms
+        )
+        if not has_wildcard and not has_catchall_identifier:
+            self._warning(
+                expr.location,
+                "Match expression may not be exhaustive — consider adding a wildcard '_' arm",
+            )
+
+    # --- Check #7: Pipeline type checking ---
+
+    def _check_pipeline(
+        self,
+        expr: ast.PipelineExpr,
+        scope: set[str],
+        param_types: dict[str, str] | None = None,
+    ) -> None:
+        """Check pipeline source and operations."""
+        if param_types is None:
+            param_types = {}
+        # Check source is not a scalar literal
+        if isinstance(expr.source, ast.Literal) and not isinstance(expr.source.value, list):
+            self._error(expr.source.location, "Pipeline source must be a list")
+        # Check conditions/expressions in pipe ops
+        pipe_scope = scope | {"it"}
+        for op in expr.operations:
+            if op.condition:
+                self._check_condition(op.condition, pipe_scope)
+            for arg in op.args:
+                if isinstance(arg, ast.Expression):
+                    self._check_expr(arg, pipe_scope, param_types)
 
     # --- Check #3 helper ---
 

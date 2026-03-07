@@ -1,0 +1,17 @@
+-- Pipeline operator example
+-- Demonstrates: |> filter, sort, take, map, chaining
+
+define scores as [85, 92, 78, 95, 88, 73, 91]
+
+main:
+  -- Find scores above 80
+  given high_scores as scores |> filter where it exceeds 80
+  print(high_scores)
+
+  -- Sort descending and take top 3
+  given top_3 as high_scores |> sort by it descending |> take first 3
+  print(top_3)
+
+  -- Double all scores
+  given doubled as scores |> map to it * 2
+  print(doubled)

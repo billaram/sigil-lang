@@ -497,6 +497,14 @@ class PipeOp(Node):
 
 
 @dataclass(frozen=True)
+class LambdaExpr(Expression):
+    """Inline anonymous compute expression."""
+    params: tuple[Param, ...]
+    return_type: TypeRef | None
+    body: tuple[Statement, ...]
+
+
+@dataclass(frozen=True)
 class ConstructorExpr(Expression):
     """Enum constructor like 'approved with rate: value'."""
     name: str
@@ -513,7 +521,13 @@ class EmptyExpr(Expression):
 # Union types for use in other nodes
 # ============================================================
 
-Declaration = TypeDecl | ConstDecl | RuleDecl | ComputeDecl | NeuralDecl | MainDecl
+@dataclass(frozen=True)
+class ExportDecl(Node):
+    """Export declaration: export name1, name2, ..."""
+    names: tuple[str, ...]
+
+
+Declaration = TypeDecl | ConstDecl | RuleDecl | ComputeDecl | NeuralDecl | MainDecl | ExportDecl
 
 
 # ============================================================

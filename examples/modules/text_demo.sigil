@@ -1,0 +1,12 @@
+-- Demonstrates importing sigil.text standard library
+import sigil.text
+
+main:
+  given msg as "Hello, Sigil World"
+  given upper as uppercase(msg)
+  given lower as lowercase(msg)
+  given len as length(msg)
+
+  print(upper)
+  print(lower)
+  print(len)
