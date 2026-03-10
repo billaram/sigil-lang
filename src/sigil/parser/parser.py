@@ -430,6 +430,27 @@ class Parser:
                 conditions.append(compound)
             self._skip_newlines()
 
+        # Optional temporal constraint: within <expr> <unit>
+        temporal: ast.TemporalConstraint | None = None
+        if self._check(TokenType.WITHIN):
+            temporal_loc = self._loc()
+            self._advance()
+            # Parse duration — but don't consume the unit suffix on the number
+            # since we want it as the temporal unit, not on the literal
+            duration = self._parse_expression()
+            # The unit may already have been captured by the literal parser
+            # (as a UNIT token), or it's a standalone identifier like "minutes"
+            if isinstance(duration, ast.Literal) and duration.unit is not None:
+                unit = duration.unit
+            elif self._check(TokenType.UNIT):
+                unit = self._advance().value
+            else:
+                unit = self._expect_identifier_or_keyword().value
+            temporal = ast.TemporalConstraint(
+                location=temporal_loc, duration=duration, unit=unit,
+            )
+            self._skip_newlines()
+
         # Then action
         self._expect(TokenType.THEN)
         action = self._parse_action()
@@ -459,6 +480,7 @@ class Parser:
             action=action,
             explain=explain,
             trace=tuple(trace),
+            temporal=temporal,
         )
 
     def _parse_given_clause(self) -> ast.GivenClause:
@@ -994,6 +1016,9 @@ class Parser:
         if self._check(TokenType.EVALUATE):
             return self._parse_evaluate_stmt()
 
+        if self._check(TokenType.QUERY):
+            return self._parse_query_stmt()
+
         # Expression statement or becomes statement
         expr = self._parse_expression()
 
@@ -1104,6 +1129,15 @@ class Parser:
         self._expect(TokenType.WITH)
         argument = self._parse_expression()
         return ast.EvaluateStmt(location=loc, target=target, argument=argument)
+
+    def _parse_query_stmt(self) -> ast.QueryStmt:
+        loc = self._loc()
+        self._expect(TokenType.QUERY)
+        goal = self._expect(TokenType.IDENTIFIER).value
+        argument: ast.Expression | None = None
+        if self._match(TokenType.WITH):
+            argument = self._parse_expression()
+        return ast.QueryStmt(location=loc, goal=goal, argument=argument)
 
     # --- Expressions (precedence climbing) ---
 
@@ -1267,12 +1301,18 @@ class Parser:
         if self._check(TokenType.NUMBER):
             tok = self._advance()
             value = tok.value
-            # Skip unit token if present (already lexed as separate token)
-            if self._match(TokenType.UNIT):
-                pass  # Unit info is in the following UNIT token; we keep it simple
+            # Capture unit token if present
+            unit_str: str | None = None
+            unit_tok = self._match(TokenType.UNIT)
+            if unit_tok:
+                unit_str = unit_tok.value
             if "." in value:
-                return ast.Literal(location=loc, value=float(value.replace("_", "")), kind="number")
-            return ast.Literal(location=loc, value=int(value.replace("_", "")), kind="number")
+                num_val: int | float = float(value.replace("_", ""))
+            else:
+                num_val = int(value.replace("_", ""))
+            return ast.Literal(
+                location=loc, value=num_val, kind="number", unit=unit_str,
+            )
 
         # String literal
         if self._check(TokenType.STRING):

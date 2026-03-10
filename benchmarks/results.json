@@ -1,0 +1,397 @@
+{
+  "lexer": [
+    {
+      "file": "proof_tree.sigil",
+      "tokens": 108,
+      "lines": 34,
+      "avg_ms": 0.38089869,
+      "min_ms": 0.365125,
+      "max_ms": 0.507541
+    },
+    {
+      "file": "temporal_monitor.sigil",
+      "tokens": 85,
+      "lines": 23,
+      "avg_ms": 0.32277912000000003,
+      "min_ms": 0.311833,
+      "max_ms": 0.391916
+    },
+    {
+      "file": "hello.sigil",
+      "tokens": 22,
+      "lines": 10,
+      "avg_ms": 0.10691036000000001,
+      "min_ms": 0.104292,
+      "max_ms": 0.150416
+    },
+    {
+      "file": "temperature.sigil",
+      "tokens": 151,
+      "lines": 36,
+      "avg_ms": 0.62013579,
+      "min_ms": 0.594458,
+      "max_ms": 0.713416
+    },
+    {
+      "file": "data_processing.sigil",
+      "tokens": 250,
+      "lines": 38,
+      "avg_ms": 0.6719469499999999,
+      "min_ms": 0.64375,
+      "max_ms": 0.848625
+    },
+    {
+      "file": "functional_pipeline.sigil",
+      "tokens": 113,
+      "lines": 25,
+      "avg_ms": 0.32096036,
+      "min_ms": 0.306333,
+      "max_ms": 0.437666
+    },
+    {
+      "file": "higher_order.sigil",
+      "tokens": 166,
+      "lines": 31,
+      "avg_ms": 0.37130251999999997,
+      "min_ms": 0.359417,
+      "max_ms": 0.467875
+    },
+    {
+      "file": "match_rules.sigil",
+      "tokens": 80,
+      "lines": 18,
+      "avg_ms": 0.23654619,
+      "min_ms": 0.226209,
+      "max_ms": 0.404042
+    },
+    {
+      "file": "pattern_matching.sigil",
+      "tokens": 132,
+      "lines": 32,
+      "avg_ms": 0.42879952000000005,
+      "min_ms": 0.415625,
+      "max_ms": 0.4955
+    },
+    {
+      "file": "pipeline.sigil",
+      "tokens": 76,
+      "lines": 18,
+      "avg_ms": 0.23331198,
+      "min_ms": 0.225875,
+      "max_ms": 0.318083
+    },
+    {
+      "file": "math_demo.sigil",
+      "tokens": 78,
+      "lines": 18,
+      "avg_ms": 0.21252864,
+      "min_ms": 0.203125,
+      "max_ms": 0.284917
+    },
+    {
+      "file": "multi_import.sigil",
+      "tokens": 92,
+      "lines": 21,
+      "avg_ms": 0.24748408000000002,
+      "min_ms": 0.235125,
+      "max_ms": 0.365
+    },
+    {
+      "file": "selective_import.sigil",
+      "tokens": 59,
+      "lines": 12,
+      "avg_ms": 0.16106997,
+      "min_ms": 0.149375,
+      "max_ms": 0.288666
+    },
+    {
+      "file": "text_demo.sigil",
+      "tokens": 55,
+      "lines": 13,
+      "avg_ms": 0.1387624,
+      "min_ms": 0.133583,
+      "max_ms": 0.177917
+    },
+    {
+      "file": "compliance_checker.sigil",
+      "tokens": 387,
+      "lines": 96,
+      "avg_ms": 1.56245586,
+      "min_ms": 1.498958,
+      "max_ms": 1.904333
+    },
+    {
+      "file": "medical_triage.sigil",
+      "tokens": 449,
+      "lines": 92,
+      "avg_ms": 1.56979322,
+      "min_ms": 1.507833,
+      "max_ms": 1.734417
+    },
+    {
+      "file": "backward_chaining.sigil",
+      "tokens": 94,
+      "lines": 30,
+      "avg_ms": 0.33355332,
+      "min_ms": 0.316875,
+      "max_ms": 0.437709
+    },
+    {
+      "file": "loan_eligibility.sigil",
+      "tokens": 528,
+      "lines": 110,
+      "avg_ms": 1.8427049400000002,
+      "min_ms": 1.760291,
+      "max_ms": 2.098916
+    }
+  ],
+  "parser": [
+    {
+      "file": "proof_tree.sigil",
+      "declarations": 6,
+      "avg_ms": 0.60325206,
+      "min_ms": 0.172209,
+      "max_ms": 24.155417
+    },
+    {
+      "file": "temporal_monitor.sigil",
+      "declarations": 5,
+      "avg_ms": 0.11575001,
+      "min_ms": 0.106667,
+      "max_ms": 0.177792
+    },
+    {
+      "file": "hello.sigil",
+      "declarations": 2,
+      "avg_ms": 0.02910294,
+      "min_ms": 0.027083,
+      "max_ms": 0.07475
+    },
+    {
+      "file": "temperature.sigil",
+      "declarations": 8,
+      "avg_ms": 0.21254953000000001,
+      "min_ms": 0.202667,
+      "max_ms": 0.382333
+    },
+    {
+      "file": "data_processing.sigil",
+      "declarations": 4,
+      "avg_ms": 0.43180501,
+      "min_ms": 0.408667,
+      "max_ms": 0.607917
+    },
+    {
+      "file": "functional_pipeline.sigil",
+      "declarations": 3,
+      "avg_ms": 0.25253787,
+      "min_ms": 0.217792,
+      "max_ms": 0.758042
+    },
+    {
+      "file": "higher_order.sigil",
+      "declarations": 6,
+      "avg_ms": 0.3256987,
+      "min_ms": 0.299292,
+      "max_ms": 0.611916
+    },
+    {
+      "file": "match_rules.sigil",
+      "declarations": 3,
+      "avg_ms": 0.13755699999999998,
+      "min_ms": 0.128083,
+      "max_ms": 0.2855
+    },
+    {
+      "file": "pattern_matching.sigil",
+      "declarations": 4,
+      "avg_ms": 0.2453066,
+      "min_ms": 0.229583,
+      "max_ms": 0.421041
+    },
+    {
+      "file": "pipeline.sigil",
+      "declarations": 2,
+      "avg_ms": 0.1592174,
+      "min_ms": 0.153875,
+      "max_ms": 0.228375
+    },
+    {
+      "file": "math_demo.sigil",
+      "declarations": 1,
+      "avg_ms": 0.17674035,
+      "min_ms": 0.17275,
+      "max_ms": 0.274375
+    },
+    {
+      "file": "multi_import.sigil",
+      "declarations": 1,
+      "avg_ms": 0.19104452000000002,
+      "min_ms": 0.1825,
+      "max_ms": 0.299958
+    },
+    {
+      "file": "selective_import.sigil",
+      "declarations": 1,
+      "avg_ms": 0.10827582999999999,
+      "min_ms": 0.101542,
+      "max_ms": 0.255625
+    },
+    {
+      "file": "text_demo.sigil",
+      "declarations": 1,
+      "avg_ms": 0.12083793,
+      "min_ms": 0.112334,
+      "max_ms": 0.395208
+    },
+    {
+      "file": "compliance_checker.sigil",
+      "declarations": 15,
+      "avg_ms": 0.59656326,
+      "min_ms": 0.553958,
+      "max_ms": 0.798875
+    },
+    {
+      "file": "medical_triage.sigil",
+      "declarations": 12,
+      "avg_ms": 0.67928708,
+      "min_ms": 0.638959,
+      "max_ms": 0.919916
+    },
+    {
+      "file": "backward_chaining.sigil",
+      "declarations": 5,
+      "avg_ms": 0.15624366,
+      "min_ms": 0.15125,
+      "max_ms": 0.234
+    },
+    {
+      "file": "loan_eligibility.sigil",
+      "declarations": 18,
+      "avg_ms": 0.8705846300000001,
+      "min_ms": 0.834,
+      "max_ms": 1.068125
+    }
+  ],
+  "evaluator": [
+    {
+      "file": "proof_tree.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.03735988,
+      "min_ms": 0.035834,
+      "max_ms": 0.054791
+    },
+    {
+      "file": "temporal_monitor.sigil",
+      "rules_evaluated": 3,
+      "avg_ms": 0.01168922,
+      "min_ms": 0.011375,
+      "max_ms": 0.015042
+    },
+    {
+      "file": "hello.sigil",
+      "rules_evaluated": 1,
+      "avg_ms": 0.00734322,
+      "min_ms": 0.007,
+      "max_ms": 0.014208
+    },
+    {
+      "file": "temperature.sigil",
+      "rules_evaluated": 4,
+      "avg_ms": 0.02152266,
+      "min_ms": 0.020709,
+      "max_ms": 0.03425
+    },
+    {
+      "file": "data_processing.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.047947420000000004,
+      "min_ms": 0.045791,
+      "max_ms": 0.064
+    },
+    {
+      "file": "functional_pipeline.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.05626726,
+      "min_ms": 0.055833,
+      "max_ms": 0.06025
+    },
+    {
+      "file": "higher_order.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.04335094,
+      "min_ms": 0.041583,
+      "max_ms": 0.053959
+    },
+    {
+      "file": "match_rules.sigil",
+      "rules_evaluated": 1,
+      "avg_ms": 0.013698219999999999,
+      "min_ms": 0.013333,
+      "max_ms": 0.01875
+    },
+    {
+      "file": "pattern_matching.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.01377998,
+      "min_ms": 0.013583,
+      "max_ms": 0.014792
+    },
+    {
+      "file": "pipeline.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.03169486,
+      "min_ms": 0.029833,
+      "max_ms": 0.082708
+    },
+    {
+      "file": "math_demo.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.026205720000000002,
+      "min_ms": 0.024917,
+      "max_ms": 0.04225
+    },
+    {
+      "file": "multi_import.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.03869842,
+      "min_ms": 0.038333,
+      "max_ms": 0.0425
+    },
+    {
+      "file": "selective_import.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.01631844,
+      "min_ms": 0.015833,
+      "max_ms": 0.02925
+    },
+    {
+      "file": "text_demo.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.01826584,
+      "min_ms": 0.017709,
+      "max_ms": 0.026375
+    },
+    {
+      "file": "compliance_checker.sigil",
+      "rules_evaluated": 11,
+      "avg_ms": 0.06326012,
+      "min_ms": 0.062125,
+      "max_ms": 0.071959
+    },
+    {
+      "file": "backward_chaining.sigil",
+      "rules_evaluated": 0,
+      "avg_ms": 0.02483586,
+      "min_ms": 0.024208,
+      "max_ms": 0.028583
+    },
+    {
+      "file": "loan_eligibility.sigil",
+      "rules_evaluated": 15,
+      "avg_ms": 0.10281914,
+      "min_ms": 0.09225,
+      "max_ms": 0.192375
+    }
+  ]
+}

@@ -78,6 +78,8 @@ _UNBOUND = object()
 
 def format_value(v: Value) -> str:
     """Format a Sigil value for display."""
+    if v is _UNBOUND:
+        return "none"
     if v is None:
         return "none"
     if isinstance(v, bool):

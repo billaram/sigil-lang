@@ -296,6 +296,13 @@ class Evaluator:
                     val = self.eval_expression(tf.value, env)
                     rule_trace.metadata[tf.name] = val
 
+                # Temporal awareness: record constraint info (not enforced yet)
+                if rule.temporal is not None:
+                    dur = self.eval_expression(rule.temporal.duration, env)
+                    rule_trace.metadata["_temporal_constraint"] = (
+                        f"within {dur} {rule.temporal.unit}"
+                    )
+
             rule_trace.duration_ms = timer.duration_ms
 
         self.trace.add_rule_trace(rule_trace)
@@ -622,6 +629,8 @@ class Evaluator:
             return self._eval_become(stmt, env)
         if isinstance(stmt, ast.EvaluateStmt):
             return self._eval_evaluate(stmt, rules, env)
+        if isinstance(stmt, ast.QueryStmt):
+            return self._eval_query(stmt, rules, env)
         if isinstance(stmt, ast.ExprStmt):
             val = self.eval_expression(stmt.expression, env)
             return val, env
@@ -716,6 +725,25 @@ class Evaluator:
                 env = env.set(field_name, field_val)
 
         result, env = self._eval_rules(rules, env)
+        return result, env
+
+    def _eval_query(
+        self, stmt: ast.QueryStmt, rules: list[ast.RuleDecl], env: Environment,
+    ) -> tuple[Value, Environment]:
+        """Evaluate a backward chaining query statement."""
+        from sigil.interpreter.backward import BackwardChainer
+
+        chainer = BackwardChainer(rules, env, self)
+        proof = chainer.query(stmt.goal)
+        self.trace.proof_trees.append(proof)
+
+        # Update environment with proved bindings
+        env = chainer.env
+        result = env.get(stmt.goal)
+        if result is _UNBOUND:
+            # Query failed — bind goal to None so print() shows "none"
+            result = None
+            env = env.set(stmt.goal, None)
         return result, env
 
     def _eval_body(

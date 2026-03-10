@@ -1,0 +1,81 @@
+-- ============================================================
+-- Insurance Underwriter — Sprint 3 Feature Showcase
+-- ============================================================
+--
+-- This example demonstrates ALL Sprint 3 features:
+--   1. Backward chaining (query statement)
+--   2. Temporal constraints (within keyword)
+--   3. Unit-annotated constants (define ... as N unit)
+--   4. Multi-level proof trees
+--   5. Forward + backward chaining together
+
+-- ---- Constants with unit annotations ----
+define MAX_AGE as 65 years
+define MIN_INCOME as 30000 dollars
+define POLICY_WINDOW as 90 seconds
+
+-- ---- Level 1: Base eligibility facts ----
+
+rule age_eligible:
+  when age is below 66
+  and age exceeds 17
+  then age_ok is true
+  explain "Applicant age is within insurable range"
+
+rule income_eligible:
+  when annual_income exceeds 29999
+  then income_ok is true
+  explain "Applicant meets minimum income requirement"
+
+-- ---- Level 2: Risk assessment ----
+
+rule low_risk:
+  when age_ok is true
+  and income_ok is true
+  and smoker is false
+  then risk_level is :low
+  explain "Non-smoker with valid age and income"
+
+rule medium_risk:
+  when age_ok is true
+  and income_ok is true
+  and smoker is true
+  then risk_level is :medium
+  explain "Smoker with valid age and income"
+
+-- ---- Level 3: Premium calculation ----
+
+rule low_risk_premium:
+  when risk_level is :low
+  then:
+    given premium as annual_income * 0.02
+
+rule medium_risk_premium:
+  when risk_level is :medium
+  then:
+    given premium as annual_income * 0.05
+
+-- ---- Level 4: Final decision ----
+
+rule approve_policy with priority 10:
+  when risk_level is :low
+  within 90 seconds
+  then decision is :approved
+  explain "Policy approved — low risk applicant"
+
+rule conditional_approve with priority 5:
+  when risk_level is :medium
+  within 90 seconds
+  then decision is :conditional
+  explain "Policy conditionally approved — requires medical exam"
+
+-- ---- Main: backward chaining drives the whole evaluation ----
+
+main:
+  -- The applicant data is already in the environment (from --input)
+  -- We only ask ONE question: "what is the decision?"
+  -- Backward chaining figures out the entire proof chain.
+  query decision
+  query premium
+  print(decision)
+  print(premium)

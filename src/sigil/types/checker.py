@@ -76,9 +76,11 @@ class TypeChecker:
         self._declared_names: dict[str, SourceLocation] = {}
         self._record_fields: dict[str, set[str]] = {}
         self._compute_arity: dict[str, int] = {}
+        self._compute_return_types: dict[str, str] = {}
         self._neural_arity: dict[str, int] = {}
         self._settable_names: set[str] = set()
         self._field_access_bases: set[str] = set()
+        self._const_units: dict[str, str] = {}  # name → unit suffix from define
 
     def check(self, program: ast.Program) -> CheckResult:
         """Type-check a program and return diagnostics."""
@@ -119,6 +121,8 @@ class TypeChecker:
         elif isinstance(decl, ast.ComputeDecl):
             self._register_name(decl.name, decl.location)
             self._compute_arity[decl.name] = len(decl.params)
+            if decl.return_type and isinstance(decl.return_type, ast.NamedType):
+                self._compute_return_types[decl.name] = decl.return_type.name
         elif isinstance(decl, ast.NeuralDecl):
             self._register_name(decl.name, decl.location)
             self._neural_arity[decl.name] = 1
@@ -134,7 +138,13 @@ class TypeChecker:
             self._declared_names[name] = location
 
     def _collect_from_ast(self, node: object) -> None:
-        """Walk entire AST collecting settable names and field-access bases."""
+        """Walk entire AST collecting settable names, field-access bases, and units."""
+        if (
+            isinstance(node, ast.ConstDecl)
+            and isinstance(node.value, ast.Literal)
+            and node.value.unit
+        ):
+            self._const_units[node.name] = node.value.unit
         if isinstance(node, ast.SetAction) and isinstance(node.target, ast.Identifier):
             self._settable_names.add(node.target.name)
         elif isinstance(node, (ast.GivenStmt, ast.GivenClause)):
@@ -207,8 +217,15 @@ class TypeChecker:
             scope.add(param.name)
             if param.type_ref and isinstance(param.type_ref, ast.NamedType):
                 param_types[param.name] = param.type_ref.name
+        # Track inferred types for gradual inference (Check #10)
+        inferred: dict[str, str] = {}
         for stmt in compute.body:
             scope = self._check_statement(stmt, scope, param_types)
+            self._infer_from_stmt(stmt, inferred)
+        # Check #9: return type consistency
+        if compute.return_type and isinstance(compute.return_type, ast.NamedType):
+            declared = compute.return_type.name
+            self._check_return_types(compute.body, declared, compute.location)
 
     def _check_main(self, main: ast.MainDecl, base_scope: set[str]) -> None:
         scope = set(base_scope)
@@ -227,6 +244,8 @@ class TypeChecker:
             if cond.operator in _NUMERIC_OPS:
                 self._check_numeric_operand(cond.left, cond.operator)
                 self._check_numeric_operand(cond.right, cond.operator)
+            # Check #11: unit mismatch
+            self._check_unit_comparison(cond)
         elif isinstance(cond, ast.MembershipCond):
             self._check_expr(cond.element, scope)
             self._check_expr(cond.collection, scope)
@@ -304,6 +323,10 @@ class TypeChecker:
         if isinstance(stmt, ast.ExprStmt):
             self._check_expr(stmt.expression, scope, param_types)
             return scope
+        if isinstance(stmt, ast.QueryStmt):
+            if stmt.argument:
+                self._check_expr(stmt.argument, scope, param_types)
+            return scope | {stmt.goal}
         return scope
 
     # --- Expression checking ---
@@ -490,6 +513,74 @@ class TypeChecker:
                 expr.location,
                 f"Type mismatch: list in numeric comparison '{operator}'",
             )
+
+    # --- Check #9: Return type consistency ---
+
+    def _check_return_types(
+        self, stmts: tuple[ast.Statement, ...], declared: str, compute_loc: SourceLocation,
+    ) -> None:
+        """Warn if return expressions have a different inferred type than declared."""
+        for stmt in stmts:
+            if isinstance(stmt, ast.ReturnStmt):
+                inferred = self._infer_expr_type(stmt.value)
+                if inferred and inferred != declared:
+                    self._warning(
+                        stmt.location,
+                        f"Return type mismatch: function declares '{declared}' "
+                        f"but returns '{inferred}'",
+                    )
+            elif isinstance(stmt, ast.IfStmt):
+                self._check_return_types(stmt.body, declared, compute_loc)
+                for elif_clause in stmt.elif_clauses:
+                    self._check_return_types(elif_clause.body, declared, compute_loc)
+                self._check_return_types(stmt.else_body, declared, compute_loc)
+
+    def _infer_expr_type(self, expr: ast.Expression) -> str | None:
+        """Infer a simple type name from an expression, or None if unknown."""
+        if isinstance(expr, ast.Literal):
+            if isinstance(expr.value, bool):
+                return "Boolean"
+            if isinstance(expr.value, int):
+                return "Number"
+            if isinstance(expr.value, float):
+                return "Number"
+            if isinstance(expr.value, str):
+                return "Text"
+        if isinstance(expr, ast.SymbolLit):
+            return "Symbol"
+        if isinstance(expr, ast.ListExpr):
+            return "List"
+        return None
+
+    # --- Check #10: Gradual type inference ---
+
+    def _infer_from_stmt(self, stmt: ast.Statement, inferred: dict[str, str]) -> None:
+        """Infer types from given statements with literal values."""
+        if isinstance(stmt, ast.GivenStmt):
+            t = self._infer_expr_type(stmt.value)
+            if t:
+                inferred[stmt.name] = t
+
+    # --- Check #11: Unit awareness ---
+
+    def _check_unit_comparison(self, cond: ast.ComparisonCond) -> None:
+        """Warn when comparing values with different unit suffixes."""
+        left_unit = self._get_unit(cond.left)
+        right_unit = self._get_unit(cond.right)
+        if left_unit and right_unit and left_unit != right_unit:
+            self._warning(
+                cond.location,
+                f"Unit mismatch in comparison: '{left_unit}' vs '{right_unit}'",
+                suggestion="Ensure both sides use the same unit",
+            )
+
+    def _get_unit(self, expr: ast.Expression) -> str | None:
+        """Get the unit suffix of an expression, if any."""
+        if isinstance(expr, ast.Literal) and expr.unit:
+            return expr.unit
+        if isinstance(expr, ast.Identifier) and expr.name in self._const_units:
+            return self._const_units[expr.name]
+        return None
 
     # --- Helpers ---
 

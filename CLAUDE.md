@@ -163,3 +163,13 @@ define MAX_TEMP as 100 degrees
 - **Do not modify examples/ unless the grammar changes.** Examples are the acceptance criteria.
 - **Do not use external parser libraries without discussion.** We chose hand-written recursive descent deliberately.
 - **Do not implement neural features before symbolic works.** Neural bridge is Phase 3.
+
+## Known Issues — Symptom / Cause / Fix
+
+| # | Symptom | Cause | Fix |
+|---|---------|-------|-----|
+| 1 | `--trace` flag shows only `print()` output, no rule evaluation trace | `format_trace()` only rendered `rule_traces` (forward chaining). Backward chaining stored proof trees in `proof_trees` but `format_trace` never rendered them. | Added `_format_proof_node()` recursive formatter and a "Backward Chaining" section to `format_trace()` in `trace.py`. |
+| 2 | `print()` shows `<object object at 0x...>` when a query fails | Failed `query` left goal variable as `_UNBOUND` in environment. `print()` resolved identifier to `_UNBOUND` sentinel, which `format_value()` didn't handle — fell through to `repr()`. | (a) `_eval_query` now binds goal to `None` on failure. (b) `format_value` handles `_UNBOUND` as `"none"` safety net. |
+| 3 | `--trace` shows `FAILED (from environment)` for unproved queries | `_format_proof_node` used `(from environment)` for any `ProofNode` without a rule, including failures. | Three-way display: `via <rule>` if rule proved it, `(from environment)` if proved without rule, `(no matching rule)` if failed. |
+| 4 | `within 30 seconds` parse error: expected IDENTIFIER got UNIT | `seconds` is lexed as a UNIT token, not an IDENTIFIER. Temporal parser called `_expect_identifier_or_keyword()` which doesn't accept UNIT tokens. | Temporal parser checks: (a) if unit already captured on literal, (b) try UNIT token, (c) fall back to identifier. |
+| 5 | `return` in `main:` block raises unhandled `ReturnSignal` | `_eval_main()` doesn't catch `ReturnSignal` — only `_call_compute` does. | Use `given` + `print()` pattern in main blocks instead of `return`. Documented as a language constraint. |

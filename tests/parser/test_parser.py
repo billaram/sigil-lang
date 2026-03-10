@@ -611,3 +611,96 @@ class TestExampleFiles:
             program = parse(tokens, f"{name}.sigil")
             assert isinstance(program, ast.Program), f"{name} should produce a Program"
             assert len(program.declarations) > 0, f"{name} should have declarations"
+
+
+# ============================================================
+# Query Statements
+# ============================================================
+
+class TestQueryStmt:
+    def test_simple_query(self):
+        decl = first_decl("""
+main:
+  query eligible
+""")
+        assert isinstance(decl, ast.MainDecl)
+        stmt = decl.body[0]
+        assert isinstance(stmt, ast.QueryStmt)
+        assert stmt.goal == "eligible"
+        assert stmt.argument is None
+
+    def test_query_with_argument(self):
+        decl = first_decl("""
+main:
+  query eligible with "test"
+""")
+        stmt = decl.body[0]
+        assert isinstance(stmt, ast.QueryStmt)
+        assert stmt.goal == "eligible"
+        assert isinstance(stmt.argument, ast.Literal)
+        assert stmt.argument.value == "test"
+
+    def test_query_with_expression_argument(self):
+        decl = first_decl("""
+main:
+  query result with x + 1
+""")
+        stmt = decl.body[0]
+        assert isinstance(stmt, ast.QueryStmt)
+        assert isinstance(stmt.argument, ast.BinaryOp)
+
+    def test_query_in_compute(self):
+        decl = first_decl("""
+compute check from x: Number returns Number:
+  query eligible
+  return x
+""")
+        assert isinstance(decl, ast.ComputeDecl)
+        assert isinstance(decl.body[0], ast.QueryStmt)
+
+
+# ============================================================
+# Temporal Constraints
+# ============================================================
+
+class TestTemporalConstraint:
+    def test_rule_with_temporal(self):
+        decl = first_decl("""
+rule temp_check with priority 5:
+  when temperature exceeds 100
+  within 30 seconds
+  then alert is true
+""")
+        assert isinstance(decl, ast.RuleDecl)
+        assert decl.temporal is not None
+        assert isinstance(decl.temporal, ast.TemporalConstraint)
+        assert isinstance(decl.temporal.duration, ast.Literal)
+        assert decl.temporal.duration.value == 30
+        assert decl.temporal.unit == "seconds"
+
+    def test_rule_without_temporal(self):
+        decl = first_decl("""
+rule basic:
+  when x is true
+  then y is true
+""")
+        assert isinstance(decl, ast.RuleDecl)
+        assert decl.temporal is None
+
+    def test_temporal_with_minutes(self):
+        decl = first_decl("""
+rule monitor:
+  when status is :active
+  within 5 minutes
+  then checked is true
+""")
+        assert decl.temporal is not None
+        assert decl.temporal.duration.value == 5
+        assert decl.temporal.unit == "minutes"
+
+    def test_number_literal_with_unit(self):
+        decl = first_decl("define MAX_TEMP as 100 degrees")
+        assert isinstance(decl, ast.ConstDecl)
+        assert isinstance(decl.value, ast.Literal)
+        assert decl.value.value == 100
+        assert decl.value.unit == "degrees"

@@ -44,6 +44,7 @@ class ProgramTrace:
     final_result: Value | None = None
     total_duration_ms: float = 0.0
     output_lines: list[str] = field(default_factory=list)
+    proof_trees: list[object] = field(default_factory=list)  # list[ProofNode]
 
     def add_rule_trace(self, rt: RuleTrace) -> None:
         self.rule_traces.append(rt)
@@ -65,9 +66,44 @@ class TraceTimer:
         self.duration_ms = elapsed_ns / 1_000_000
 
 
+def _format_proof_node(node: object, indent: int = 0) -> list[str]:
+    """Format a ProofNode tree for display."""
+    from sigil.interpreter.backward import ProofNode
+
+    if not isinstance(node, ProofNode):
+        return []
+
+    lines: list[str] = []
+    prefix = "  " * indent
+    status = "PROVED" if node.result else "FAILED"
+    if node.rule:
+        rule_info = f" via {node.rule}"
+    elif node.result:
+        rule_info = " (from environment)"
+    else:
+        rule_info = " (no matching rule)"
+    lines.append(f"{prefix}[query {node.goal}] {status}{rule_info}")
+
+    if node.bindings:
+        bindings_str = ", ".join(
+            f"{k} = {format_value(v)}" for k, v in node.bindings.items()
+        )
+        lines.append(f"{prefix}  bindings: {bindings_str}")
+
+    for sub in node.subgoals:
+        lines.extend(_format_proof_node(sub, indent + 1))
+
+    return lines
+
+
 def format_trace(trace: ProgramTrace, verbose: bool = True) -> str:
     """Format a program trace for display."""
     lines: list[str] = []
+
+    # Forward chaining rule traces
+    if trace.rule_traces:
+        lines.append("── Forward Chaining ──")
+        lines.append("")
 
     for rt in trace.rule_traces:
         status = "FIRED" if rt.fired else "NOT FIRED"
@@ -87,12 +123,29 @@ def format_trace(trace: ProgramTrace, verbose: bool = True) -> str:
             if rt.fired and rt.explain:
                 lines.append(f"  explain: \"{rt.explain}\"")
 
+            if rt.metadata:
+                for k, v in rt.metadata.items():
+                    if not k.startswith("_"):
+                        continue
+                    lines.append(f"  {k.lstrip('_')}: {v}")
+
         lines.append("")
+
+    # Backward chaining proof trees
+    if trace.proof_trees:
+        lines.append("── Backward Chaining ──")
+        lines.append("")
+        for tree in trace.proof_trees:
+            lines.extend(_format_proof_node(tree))
+            lines.append("")
 
     if trace.final_result is not None:
         lines.append(f"Result: {format_value(trace.final_result)}")
 
-    for line in trace.output_lines:
-        lines.append(line)
+    # Program output
+    if trace.output_lines:
+        lines.append("── Output ──")
+        for line in trace.output_lines:
+            lines.append(line)
 
     return "\n".join(lines)

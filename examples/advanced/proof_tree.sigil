@@ -1,0 +1,33 @@
+-- Proof Tree Example: Multi-Level Backward Chaining
+-- Demonstrates deep backward chaining with proof trees
+
+-- Level 1: Base facts
+rule set_income:
+  when salary exceeds 0
+  then income is salary
+
+-- Level 2: Derived from income
+rule high_income:
+  when income exceeds 80000
+  then income_level is :high
+
+rule medium_income:
+  when income exceeds 40000
+  and income is below 80001
+  then income_level is :medium
+
+-- Level 3: Derived from income level
+rule premium_eligible:
+  when income_level is :high
+  then premium_eligible is true
+
+-- Level 4: Final decision
+rule approve_premium:
+  when premium_eligible is true
+  then decision is :approved
+  explain "Premium approved based on high income"
+
+main:
+  given salary as 95000
+  query decision
+  print(decision)
