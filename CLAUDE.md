@@ -19,42 +19,30 @@ This is NOT syntax sugar. This is a new programming language with lexer, parser,
 5. **Anchor to ecosystem.** Python FFI for ML libraries, Rust core for performance. Sigil is not an island.
 6. **AI-native grammar.** Flat structure, minimal nesting, ~30 keywords, explicit types at boundaries — designed for LLM generation.
 
-## Architecture Decisions (Already Made)
+## Architecture Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Language name | Sigil | Symbolic mark with inherent power/meaning |
-| Host language | Python + Rust core | Python for ML ecosystem; Rust (via PyO3/maturin) for performance |
-| Syntax style | Constrained natural language | Human readable + LLM generable |
-| Parser approach | PEG-based (hand-written recursive descent) | Unambiguous, linear-time, maximum control |
-| Implementation | Tree-walking interpreter first | Proven path: tree-walk → bytecode VM → native |
-| Indentation | Significant whitespace (Python-style, spaces only) | Natural for NL-style syntax |
-| Type system | Gradual (optional annotations, required at boundaries) | Low barrier + safety where it matters |
-| Build system | maturin (Rust+Python) | Industry standard for PyO3 projects |
-| Testing | pytest + hypothesis | Property-based testing for parser/type checker |
+@ai_docs/ARCHITECTURE_DECISIONS.md
 
 ## Project Structure
 
 ```
 sigil-lang/
 ├── CLAUDE.md                       ← YOU ARE HERE
+├── .claude/
+│   ├── rules/                      ← Path-scoped context (auto-loaded per subsystem)
+│   ├── skills/                     ← Reusable workflows (/run-tests, /fix-issue, etc.)
+│   └── agents/                     ← Specialist subagents (compiler, neuro-symbolic, etc.)
 ├── ai_docs/                        ← Deep context for Claude Code sessions
 │   ├── CONVENTIONS.md              ← Code style, naming, patterns
 │   ├── ARCHITECTURE_DECISIONS.md   ← Why we chose what we chose
 │   └── STATUS.md                   ← Current state, what works, what doesn't
 ├── PRP/                            ← Sprint plans and retrospectives
-│   └── mar1-mar15.md               ← Current sprint
 ├── docs/
-│   ├── VISION.md                   ← Grand vision (read for philosophy)
-│   ├── ARCHITECTURE.md             ← Technical architecture (read for structure)
+│   ├── VISION.md                   ← Grand vision
+│   ├── ARCHITECTURE.md             ← Technical architecture
 │   ├── ROADMAP.md                  ← Full 5-phase plan
-│   ├── design/
-│   │   ├── SYNTAX.md               ← Language syntax spec (THE reference for syntax)
-│   │   ├── TYPE_SYSTEM.md          ← Type system design
-│   │   └── INTEROP.md              ← Python/Rust FFI design
-│   ├── spec/
-│   │   ├── GRAMMAR.peg             ← Formal PEG grammar (THE reference for parsing)
-│   │   └── SEMANTICS.md            ← Operational semantics
+│   ├── design/                     ← SYNTAX.md, TYPE_SYSTEM.md, INTEROP.md
+│   ├── spec/                       ← GRAMMAR.peg, SEMANTICS.md
 │   └── research/                   ← 8 research documents + bibliography
 ├── src/sigil/                      ← Python package (interpreter frontend)
 │   ├── lexer/                      ← Tokenization
@@ -66,93 +54,60 @@ sigil-lang/
 │   ├── ffi/                        ← Python/Rust interop
 │   └── cli.py                      ← CLI entry point
 ├── src/sigil_core/                 ← Rust crate (performance core, via PyO3)
-├── tests/                          ← pytest test suite
-├── examples/                       ← .sigil example programs (5 currently)
-├── tools/                          ← Dev tools, formatters, LSP (future)
-└── benchmarks/                     ← Performance benchmarks (future)
+├── tests/                          ← pytest test suite (665 tests)
+└── examples/                       ← .sigil example programs (18 files)
 ```
-
-## Key Files to Read Before Working
-
-**Before ANY work**, read these in order:
-1. `ai_docs/STATUS.md` — What is currently implemented, what's next
-2. `ai_docs/CONVENTIONS.md` — Code style and patterns to follow
-3. `PRP/mar1-mar15.md` (or latest sprint plan) — Current tasks
-4. `docs/design/SYNTAX.md` — Language syntax specification
-5. `docs/spec/GRAMMAR.peg` — Formal grammar (if working on lexer/parser)
-
-**For deeper context** (read as needed):
-- `docs/VISION.md` — Philosophy and design principles
-- `docs/ARCHITECTURE.md` — Full system architecture
-- `docs/spec/SEMANTICS.md` — What programs mean (if working on interpreter)
-- `docs/design/TYPE_SYSTEM.md` — Types (if working on type checker)
-- `docs/design/INTEROP.md` — FFI design (if working on Python/Rust bridge)
 
 ## Development Commands
 
 ```bash
 # Setup
 pip install -e ".[dev]"           # Install in dev mode
-maturin develop                    # Build Rust core (when it exists)
+maturin develop                    # Build Rust core
 
 # Run
 sigil run file.sigil               # Execute a program
 sigil repl                         # Interactive REPL
-sigil lex file.sigil               # Dump token stream (debugging)
-sigil parse-ast file.sigil         # Dump AST (debugging)
+sigil lex file.sigil               # Dump token stream
+sigil parse-ast file.sigil         # Dump AST
 
 # Test
 pytest tests/ -v                   # Run all tests
-pytest tests/lexer/ -v             # Lexer tests only
-pytest tests/parser/ -v            # Parser tests only
+pytest tests/<subsystem>/ -v       # Subsystem tests only
 ruff check src/                    # Lint
-mypy src/sigil/                    # Type check Python code
+mypy src/sigil/                    # Type check
 
 # Format
 ruff format src/ tests/            # Auto-format
 ```
 
-## Code Conventions (Summary — see ai_docs/CONVENTIONS.md for full)
+## Context Loading
 
-- **Python 3.11+**, use dataclasses, type hints everywhere
-- **Immutable by default** — `@dataclass(frozen=True)` for AST nodes
-- **No classes where functions suffice** — the lexer is a function, not a class with state
-- **Tests alongside implementation** — never ship code without tests
-- **Error messages matter** — include source location, context, and suggestions
-- **Examples are the spec** — the 5 .sigil files in examples/ are acceptance criteria
+Context is loaded automatically via `.claude/rules/` based on which files you're editing:
+- **Lexer/parser work** → `sigil-syntax.md`, `lexer.md`, `parser.md` auto-load
+- **Interpreter work** → `interpreter.md` auto-loads
+- **Type checker work** → `typechecker.md` auto-loads
+- **Module/stdlib work** → `modules.md`, `stdlib.md` auto-load
+- **Test work** → `testing.md` auto-loads
+- **All work** → `code-conventions.md`, `known-issues.md` always loaded
 
-## Sigil Language Quick Reference
+For deeper context, read: `ai_docs/STATUS.md`, `docs/design/SYNTAX.md`, `docs/spec/GRAMMAR.peg`
 
-```sigil
--- Comments start with --
--- Keywords: rule, when, then, and, or, not, if, else, given, define,
---           as, is, exceeds, below, between, any, all, none, in,
---           import, export, module, type, neural, explain, with,
---           true, false, using, from, compute, return, trace, match,
---           for, each, evaluate, main
+## Skills (Reusable Workflows)
 
-rule example_rule with priority 10:
-  when x exceeds 100
-  and y is between 10 and 50
-  and status is :active
-  then trigger alert with severity :critical
-  explain "X exceeded threshold"
+- `/run-tests [subsystem]` — Run pytest with right flags
+- `/validate-examples` — Run all .sigil examples
+- `/fix-issue` — Structured reproduce→diagnose→test→fix→verify workflow
+- `/update-status` — Update ai_docs/STATUS.md after completing work
+- `/add-syntax` — 10-step workflow for adding new language syntax
+- `/new-sprint` — Create sprint plan from template
 
-compute add from a: Number, b: Number returns Number:
-  return a + b
+## Specialist Agents
 
-neural classify from text: Text:
-  model "classifier-v2"
-  returns Symbol
-  confidence_threshold 0.85
-  fallback to :unknown
-
-type Person is record:
-  name: Text
-  age: Number
-
-define MAX_TEMP as 100 degrees
-```
+- **compiler-expert** — Lexer, parser, AST, grammar
+- **neuro-symbolic-expert** — Rule engines, chaining, neural bridge, semantics
+- **testing-qa** — Test writing, coverage, property-based testing
+- **code-reviewer** — Read-only code review (uses haiku for speed)
 
 ## What NOT To Do
 
@@ -163,13 +118,3 @@ define MAX_TEMP as 100 degrees
 - **Do not modify examples/ unless the grammar changes.** Examples are the acceptance criteria.
 - **Do not use external parser libraries without discussion.** We chose hand-written recursive descent deliberately.
 - **Do not implement neural features before symbolic works.** Neural bridge is Phase 3.
-
-## Known Issues — Symptom / Cause / Fix
-
-| # | Symptom | Cause | Fix |
-|---|---------|-------|-----|
-| 1 | `--trace` flag shows only `print()` output, no rule evaluation trace | `format_trace()` only rendered `rule_traces` (forward chaining). Backward chaining stored proof trees in `proof_trees` but `format_trace` never rendered them. | Added `_format_proof_node()` recursive formatter and a "Backward Chaining" section to `format_trace()` in `trace.py`. |
-| 2 | `print()` shows `<object object at 0x...>` when a query fails | Failed `query` left goal variable as `_UNBOUND` in environment. `print()` resolved identifier to `_UNBOUND` sentinel, which `format_value()` didn't handle — fell through to `repr()`. | (a) `_eval_query` now binds goal to `None` on failure. (b) `format_value` handles `_UNBOUND` as `"none"` safety net. |
-| 3 | `--trace` shows `FAILED (from environment)` for unproved queries | `_format_proof_node` used `(from environment)` for any `ProofNode` without a rule, including failures. | Three-way display: `via <rule>` if rule proved it, `(from environment)` if proved without rule, `(no matching rule)` if failed. |
-| 4 | `within 30 seconds` parse error: expected IDENTIFIER got UNIT | `seconds` is lexed as a UNIT token, not an IDENTIFIER. Temporal parser called `_expect_identifier_or_keyword()` which doesn't accept UNIT tokens. | Temporal parser checks: (a) if unit already captured on literal, (b) try UNIT token, (c) fall back to identifier. |
-| 5 | `return` in `main:` block raises unhandled `ReturnSignal` | `_eval_main()` doesn't catch `ReturnSignal` — only `_call_compute` does. | Use `given` + `print()` pattern in main blocks instead of `return`. Documented as a language constraint. |

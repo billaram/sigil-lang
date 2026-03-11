@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source .venv/bin/activate && pytest *)",
+      "Bash(source .venv/bin/activate && ruff *)",
+      "Bash(source .venv/bin/activate && mypy *)",
+      "Bash(source .venv/bin/activate && sigil *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(find examples/ *)",
+      "Bash(cat *)"
+    ],
+    "deny": []
+  }
+}
