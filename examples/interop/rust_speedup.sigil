@@ -19,4 +19,4 @@ rule normal_temperature with priority 5:
 main:
   given temperature as 150
   given status as :active
-  evaluate rules
+  evaluate all rules with {temperature: temperature, status: status}

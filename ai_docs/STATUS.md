@@ -1,10 +1,10 @@
 # Project Status — KEEP THIS UPDATED
 
-> **Last updated**: 2026-03-10
-> **Current phase**: Phase 2 (Core Language) — COMPLETE (all 3 sprints)
-> **Completed sprints**: phase2-sprint1.md, phase2-sprint2.md, phase2-sprint3.md
-> **Next**: Phase 3 (Neural Bridge) — see docs/ROADMAP.md
-> **Previous phase**: Phase 1 (Minimal Language) — COMPLETE
+> **Last updated**: 2026-03-11
+> **Current phase**: Phase 3 (Ecosystem Integration) — COMPLETE (all 3 sprints + Neural Bridge v2)
+> **Completed sprints**: phase2-sprint1.md, phase2-sprint2.md, phase2-sprint3.md, phase3 (3 sprints), neural-bridge-v2 (3 sprints)
+> **Next**: Phase 4 — see docs/ROADMAP.md
+> **Previous phases**: Phase 1 (Minimal Language) — COMPLETE, Phase 2 (Core Language) — COMPLETE
 
 ---
 
@@ -17,6 +17,7 @@
 - 8 research documents + 65-reference bibliography
 - Sprint plans: `PRP/mar-phase1-sprint1.md` (done), `PRP/mar-phase1-sprint2.md` (done)
 - Phase 2 plans: `PRP/phase2-sprint1.md` (done), `PRP/phase2-sprint2.md` (done), `PRP/phase2-sprint3.md`
+- Phase 3 plan: `PRP/phase3-plan.md`
 
 ### Project Infrastructure (Working)
 - [x] Git repo initialized on `main` branch
@@ -26,12 +27,12 @@
 - [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl` all working
 - [x] `maturin develop` — builds Rust core + installs Python package
 - [x] Virtual environment at `.venv` (Python 3.14.3)
-- [x] Rust crate (`src/sigil_core/`) — PyO3 module loading, `__version__` exposed
+- [x] Rust crate (`src/sigil_core/`) — ReteNetwork, ConstraintSolver, trace serialization
 - [x] Linting passes — `ruff check src/ tests/` clean
 - [x] mypy passes — `mypy src/sigil/` clean (0 errors, 25 files)
 - [ ] CI pipeline — NOT YET CREATED
 
-### Example Programs (15 Complete)
+### Example Programs (20 Complete)
 **Phase 1 examples** (acceptance criteria — all 5 lex, parse, and execute):
 1. `examples/basics/hello.sigil` — minimal rule
 2. `examples/basics/temperature.sigil` — multi-rule with priority
@@ -58,6 +59,11 @@
 17. `examples/advanced/temporal_monitor.sigil` — temperature monitoring with `within`
 18. `examples/advanced/proof_tree.sigil` — multi-level backward chaining proof
 
+**Phase 3 examples** (2 new):
+19. `examples/interop/python_math.sigil` — Python FFI (math + json imports)
+20. `examples/interop/rust_speedup.sigil` — Rust core rule matching
+21. `examples/neuro_symbolic/sentiment_analysis.sigil` — Neural bridge with HF model
+
 ### Lexer (Complete — Phase 1)
 - `src/sigil/errors.py` — Error hierarchy + SourceLocation
 - `src/sigil/lexer/tokens.py` — TokenType enum (80+ keywords), Token dataclass, UNIT_SUFFIXES
@@ -77,12 +83,12 @@
   - Proof trees recorded in ProgramTrace for auditability
   - `query` statement in evaluator wires into backward chainer
 
-### Interpreter (Complete — Phase 1 + Phase 2 enhancements)
+### Interpreter (Complete — Phase 1 + Phase 2 + Phase 3 enhancements)
 - `src/sigil/interpreter/values.py` — Symbol, Record, Variant, Closure, Value union, format_value, values_equal
 - `src/sigil/interpreter/environment.py` — Immutable environment with scope chain
-- `src/sigil/interpreter/trace.py` — ConditionTrace, RuleTrace, ProgramTrace, TraceTimer, format_trace
+- `src/sigil/interpreter/trace.py` — ConditionTrace, RuleTrace, NeuralTrace, ProgramTrace, TraceTimer, format_trace
 - `src/sigil/interpreter/builtins.py` — print, max, min, len builtins
-- `src/sigil/interpreter/evaluator.py` — Full tree-walking evaluator (~1230 lines):
+- `src/sigil/interpreter/evaluator.py` — Full tree-walking evaluator (~1300 lines):
   - Expression evaluator (15+ types: literals, field access, binary ops, function calls, match, pipeline, lambda, etc.)
   - Condition evaluator (12 condition types with short-circuit AND/OR)
   - Rule evaluator (priority-based forward chaining, max 100 iterations)
@@ -91,9 +97,57 @@
   - Compute function evaluator with return signal
   - Closure/lambda support with lexical scoping
   - Import evaluation with selective, aliased, and full import modes
+  - **Python FFI imports** — `import python X` loads real Python modules via importlib
+  - **Neural bridge** — `_call_neural()` uses ModelRegistry with confidence thresholds and fallbacks
   - String interpolation in explain clauses
-  - Neural stubs (return fallback values)
 - `src/sigil/cli.py` — `sigil run` with --input (JSON) and --trace flags, module loader integration
+
+### Python FFI (Complete — Phase 3 Sprint 1)
+- `src/sigil/ffi/marshal.py` — Bidirectional type marshaling: Sigil ↔ Python
+  - `sigil_to_python()`, `python_to_sigil()`, `wrap_python_callable()`
+  - Handles: int, float, str, bool, None, Symbol→str, Record→dict, list, callable wrapping
+- `src/sigil/ffi/python_interop.py` — Python module importer
+  - `import_python_module()` — importlib-based, marshals public API
+  - `import_python_names()` — selective imports
+  - Graceful degradation: missing modules bind empty record (errors on use, not import)
+- `src/sigil/ffi/errors.py` — Error translation (Python exceptions → SigilRuntimeError)
+- 45 tests (15 marshal, 15 interop, 5 errors, 10 end-to-end)
+
+### Neural Bridge (Complete — Phase 3 Sprint 2 + v2 Enhancement)
+- `src/sigil/neural/backend.py` — `ModelBackend` protocol, `ModelResult`, `NeuralConfig`, `CandidateResult`
+- `src/sigil/neural/registry.py` — `ModelRegistry` singleton with prefix-based backend routing + timeout enforcement
+  - Built-in prefixes: `hf:`, `mock:`, `claude:`, `openai:`, `onnx:`, `python:`
+  - Lazy model loading, caching, thread-based timeout
+- `src/sigil/neural/huggingface.py` — HuggingFace Transformers backend
+  - Text-classification + zero-shot-classification (with `labels` field)
+  - Pipeline caching by (model_id, task_type)
+- `src/sigil/neural/anthropic_backend.py` — Anthropic Claude backend (requires `anthropic` SDK)
+- `src/sigil/neural/openai_backend.py` — OpenAI GPT backend (requires `openai` SDK)
+- `src/sigil/neural/onnx_backend.py` — ONNX Runtime backend (requires `onnxruntime`)
+- `src/sigil/neural/python_callable.py` — Python callable backend (dotted path to function)
+- `src/sigil/neural/mock_backend.py` — Deterministic mock backend (echo, fail, low_confidence, fixed)
+- `src/sigil/interpreter/evaluator.py` — `_build_neural_config()` extracts all NeuralDecl fields into NeuralConfig
+- `src/sigil/interpreter/trace.py` — `NeuralTrace` dataclass, rendered in `format_trace()`
+- `NeuralConfig` supports: labels, hypothesis_template, system_prompt, temperature, max_tokens, top_p, top_k, stop_sequences, output_schema, num_candidates, beam_size, timeout_seconds
+- 76 tests (5 config, 5 backend, 7 registry, 8 HuggingFace, 8 Anthropic, 9 OpenAI, 4 ONNX, 6 Python callable, 6 mock, 18 integration)
+
+### Rust Core (Complete — Phase 3 Sprint 3)
+- `src/sigil_core/src/values.rs` — `SigilValue` Rust enum with `from_python()`/`to_python()` + serde
+- `src/sigil_core/src/matcher.rs` — Rete-lite pattern matcher
+  - `ReteNetwork` PyO3 class: add rules, match facts, priority sorting
+  - 6 condition operators: equals, not-equals, greater/less than, between, contains
+- `src/sigil_core/src/solver.rs` — Constraint solver
+  - `ConstraintSolver` PyO3 class: equals, not-equals, greater/less, between, one-of
+  - `check()` returns violation list, `is_satisfied()` convenience method
+- `src/sigil_core/src/trace.rs` — Trace serialization
+  - `serialize_trace_json()` (pretty), `serialize_trace_compact()` (no whitespace)
+  - Handles rule traces, neural traces, output lines, duration
+- `Cargo.toml` — serde + serde_json dependencies
+- Benchmarks: `benchmarks/bench_rust_vs_python.py`
+  - Pattern matching: ~2.4x speedup (release mode, 50 rules)
+  - Trace serialization: ~1.3x speedup (release mode)
+  - Constraint solving: marshaling overhead dominates at small scale
+- 30 tests (13 matcher, 12 solver, 5 trace)
 
 ### Module System (Complete — Phase 2 Sprint 2)
 - `src/sigil/modules/resolver.py` — Module path resolution (stdlib, python, relative, project-relative)
@@ -135,7 +189,7 @@
 - Special commands: `:env`, `:rules`, `:funcs`, `:types`, `:trace`, `:reset`, `:help`
 
 ### Test Suite
-- **665 tests total**, all passing:
+- **807 tests total**, all passing (excluding 7 pre-existing torchvision env failures):
   - 91 lexer tests
   - 75 parser tests (+ 12 pipeline parsing tests)
   - 137 interpreter tests (Phase 1)
@@ -163,6 +217,24 @@
   - 15 enhanced type inference tests
   - 7 Sprint 3 example integration tests
   - 3 backward chaining deep integration tests
+  - **Phase 3 (99 new tests):**
+  - 15 FFI marshal tests
+  - 15 FFI python_interop tests
+  - 5 FFI error translation tests
+  - 10 FFI end-to-end tests
+  - 5 neural backend tests
+  - 5 neural config tests
+  - 7 neural registry tests
+  - 8 neural HuggingFace tests (mocked, inc. zero-shot)
+  - 8 neural Anthropic backend tests (mocked)
+  - 9 neural OpenAI backend tests (mocked)
+  - 4 neural ONNX backend tests (mocked)
+  - 6 neural Python callable tests
+  - 6 neural MockBackend tests
+  - 18 neural integration tests
+  - 13 Rust pattern matcher tests
+  - 12 Rust constraint solver tests
+  - 5 Rust trace serialization tests
 
 ---
 
@@ -210,7 +282,39 @@
 - [x] Performance benchmarks (lexer, parser, evaluator)
 - [x] 3 new examples, 83 new tests → 665 total
 
-### Phase 3+: See `docs/ROADMAP.md`
+## Phase 3 Plan (3 Sprints)
+
+### Sprint 1: Python FFI — COMPLETE
+- [x] Type marshaling layer (`ffi/marshal.py`)
+- [x] Error translation (`ffi/errors.py`)
+- [x] Python module importer (`ffi/python_interop.py`)
+- [x] Evaluator wired for `import python X` (full, selective, aliased)
+- [x] Graceful degradation for missing modules
+- [x] 45 new tests + 1 example → 710 total
+
+### Sprint 2: Neural Bridge — COMPLETE
+- [x] `ModelBackend` protocol + `ModelResult` dataclass
+- [x] `ModelRegistry` with prefix-based backend routing
+- [x] HuggingFace backend (mock-tested, real model optional)
+- [x] `NeuralTrace` in trace system
+- [x] `_call_neural()` replaces `_call_neural_stub()` in evaluator
+- [x] 24 new tests + 1 example → 734 total
+
+### Neural Bridge v2 — COMPLETE (3 sprints)
+- [x] Sprint A: `NeuralConfig` + `CandidateResult` + `MockBackend` + zero-shot HuggingFace + evaluator `_build_neural_config()`
+- [x] Sprint B: `AnthropicBackend` (claude: prefix) + `OpenAIBackend` (openai: prefix) + structured JSON→Record output
+- [x] Sprint C: `ONNXBackend` (onnx: prefix) + `PythonCallableBackend` (python: prefix) + timeout enforcement
+- [x] 43 new tests (76 neural total) + 2 new examples → 807 total
+
+### Sprint 3: Rust Core — COMPLETE
+- [x] `SigilValue` Rust enum with PyO3 + serde traits
+- [x] Rete-lite pattern matcher (`ReteNetwork` PyO3 class)
+- [x] Constraint solver (`ConstraintSolver` PyO3 class)
+- [x] Trace serialization (JSON pretty + compact)
+- [x] Benchmarks (pattern matching ~2.4x, trace ~1.3x speedup)
+- [x] 30 new tests + 1 example + benchmark → 764 total
+
+### Phase 4+: See `docs/ROADMAP.md`
 
 ---
 
@@ -221,7 +325,9 @@
 3. ~~Pipeline parsing~~: **Resolved** — Full pipeline operator implemented in Phase 2 Sprint 1
 4. **CI pipeline**: Not yet set up (GitHub Actions)
 5. ~~mypy~~: **Resolved** — 0 errors across 25 source files
-6. **Neural stubs**: Phase 1 interpreter uses fallback values, real model loading in Phase 3
+6. ~~Neural stubs~~: **Resolved** — Phase 3 replaced stubs with pluggable ModelBackend + ModelRegistry
+7. **Rust core marshaling overhead**: At small scale (5 constraints), Python-to-Rust marshaling dominates computation. Speedup visible at 50+ rules. Full Rete with persistent Rust-side data (Phase 5) will eliminate this.
+8. **HuggingFace models in CI**: transformers not installed by default; neural tests use mocks. Real model tests should be `@pytest.mark.slow`.
 
 ---
 
@@ -239,6 +345,13 @@
 | 2026-03-06 | Type checker: Light for Phase 1 | Catch obvious errors, defer full inference to Phase 2 | Full gradual types upfront |
 | 2026-03-07 | Condition parser: _parse_additive() | Prevent pipeline `\|>` tokens from being consumed inside conditions | Allow `_parse_expression()` in conditions |
 | 2026-03-07 | Keyword-safe dotted names | Module names like `list` are keywords; import paths must accept them | Rename stdlib modules |
+| 2026-03-11 | Neural backend: pluggable protocol | `ModelBackend` protocol + prefix-based `ModelRegistry`; extensible for custom backends | Hardcoded HuggingFace, direct API calls |
+| 2026-03-11 | Python FFI: graceful import failure | Missing modules bind empty record; errors at use time, not import time. Preserves backward compat with examples using `import python transformers` | Hard fail on missing module |
+| 2026-03-11 | Rust core: Rete-lite first | Simplified alpha-node matching; full Rete with beta-node joins deferred to Phase 5 | Full Rete from start, no Rust core |
+| 2026-03-11 | Rust deps: serde + serde_json | Standard Rust serialization; needed for trace JSON export | bincode (binary), custom format |
+| 2026-03-11 | Neural v2: NeuralConfig dataclass | All neural field params in one frozen dataclass; parser already accepts arbitrary IDENTIFIER fields | Per-field extraction in evaluator |
+| 2026-03-11 | Neural v2: 6 backends | hf:, claude:, openai:, onnx:, python:, mock: — all optional except mock/python | Single backend, manual selection |
+| 2026-03-11 | Neural v2: timeout via threading | Thread-based timeout around backend.predict(); TimeoutError triggers fallback | asyncio (would infect evaluator), signal (not cross-platform) |
 
 ---
 

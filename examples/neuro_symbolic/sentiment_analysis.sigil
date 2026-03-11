@@ -24,6 +24,7 @@ rule neutral_response with priority 5:
   explain "Neutral or unknown sentiment"
 
 main:
-  given sentiment as classify_sentiment("This product is amazing!")
+  given text from input
+  given sentiment as classify_sentiment(text)
   print(sentiment)
-  evaluate rules
+  evaluate all rules with {sentiment: sentiment}

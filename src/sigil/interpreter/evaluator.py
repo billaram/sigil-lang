@@ -1006,24 +1006,105 @@ class Evaluator:
 
         return None
 
+    def _build_neural_config(self, decl: ast.NeuralDecl) -> tuple:
+        """Extract all fields from a NeuralDecl into a NeuralConfig + fallback value."""
+        from sigil.neural.backend import NeuralConfig
+
+        model_id = ""
+        return_type = "Symbol"
+        threshold = 0.5
+        fallback_value: Value = None
+        labels: tuple[str, ...] | None = None
+        hypothesis_template: str | None = None
+        system_prompt: str | None = None
+        temperature: float | None = None
+        max_tokens: int | None = None
+        top_p: float | None = None
+        top_k: int | None = None
+        stop_sequences: tuple[str, ...] | None = None
+        output_schema: str | None = None
+        num_candidates = 1
+        beam_size: int | None = None
+        timeout_seconds = 60.0
+
+        env = Environment()
+        for f in decl.fields:
+            if isinstance(f.value, ast.TypeRef):
+                if f.name == "returns":
+                    if isinstance(f.value, ast.NamedType):
+                        return_type = f.value.name
+                    elif isinstance(f.value, ast.ListType):
+                        return_type = "List"
+                    else:
+                        return_type = "Unknown"
+                continue
+
+            val = self.eval_expression(f.value, env)
+
+            if f.name == "model":
+                model_id = str(val)
+            elif f.name == "confidence_threshold":
+                threshold = float(val)  # type: ignore[arg-type]
+            elif f.name == "fallback":
+                fallback_value = val
+            elif f.name == "labels":
+                if isinstance(val, list):
+                    labels = tuple(
+                        v.name if isinstance(v, Symbol) else str(v) for v in val
+                    )
+            elif f.name == "hypothesis":
+                hypothesis_template = str(val)
+            elif f.name == "system_prompt":
+                system_prompt = str(val)
+            elif f.name == "temperature":
+                temperature = float(val)  # type: ignore[arg-type]
+            elif f.name == "max_tokens":
+                max_tokens = int(val)  # type: ignore[arg-type]
+            elif f.name == "top_p":
+                top_p = float(val)  # type: ignore[arg-type]
+            elif f.name == "top_k":
+                top_k = int(val)  # type: ignore[arg-type]
+            elif f.name == "stop_sequences":
+                if isinstance(val, list):
+                    stop_sequences = tuple(str(v) for v in val)
+            elif f.name == "output_schema":
+                output_schema = str(val)
+            elif f.name == "num_candidates":
+                num_candidates = int(val)  # type: ignore[arg-type]
+            elif f.name == "beam_size":
+                beam_size = int(val)  # type: ignore[arg-type]
+            elif f.name == "timeout":
+                timeout_seconds = float(val)  # type: ignore[arg-type]
+
+        config = NeuralConfig(
+            model_id=model_id,
+            return_type=return_type,
+            confidence_threshold=threshold,
+            labels=labels,
+            hypothesis_template=hypothesis_template,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            top_k=top_k,
+            stop_sequences=stop_sequences,
+            output_schema=output_schema,
+            num_candidates=num_candidates,
+            beam_size=beam_size,
+            timeout_seconds=timeout_seconds,
+        )
+        return config, fallback_value
+
     def _call_neural(self, name: str, args: list[Value]) -> Value:
         """Call a neural function via the model registry, with fallback."""
         from sigil.interpreter.trace import NeuralTrace
         from sigil.neural.registry import get_registry
 
         decl = self._neural_funcs[name]
+        config, fallback_value = self._build_neural_config(decl)
 
-        # Extract neural declaration fields
-        model_id = ""
-        threshold = 0.5
-        fallback_value: Value = None
-        for f in decl.fields:
-            if f.name == "model" and isinstance(f.value, ast.Expression):
-                model_id = str(self.eval_expression(f.value, Environment()))
-            elif f.name == "confidence_threshold" and isinstance(f.value, ast.Expression):
-                threshold = float(self.eval_expression(f.value, Environment()))
-            elif f.name == "fallback" and isinstance(f.value, ast.Expression):
-                fallback_value = self.eval_expression(f.value, Environment())
+        model_id = config.model_id
+        threshold = config.confidence_threshold
 
         # Get input data from args
         input_data: Value = args[0] if args else None
@@ -1032,7 +1113,7 @@ class Evaluator:
         registry = get_registry()
         if model_id and registry.has_backend(model_id):
             try:
-                result = registry.predict(model_id, input_data)
+                result = registry.predict(model_id, input_data, config)
                 if result.confidence >= threshold:
                     self.trace.add_neural_trace(NeuralTrace(
                         function_name=name,

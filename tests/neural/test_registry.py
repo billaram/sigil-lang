@@ -3,7 +3,7 @@
 import pytest
 
 from sigil.interpreter.values import Symbol
-from sigil.neural.backend import ModelResult
+from sigil.neural.backend import ModelResult, NeuralConfig
 from sigil.neural.registry import ModelRegistry
 
 
@@ -14,13 +14,13 @@ class MockBackend:
         self.result_value = result_value
         self.confidence = confidence
         self.loaded: list[str] = []
-        self.predict_calls: list[tuple[str, object]] = []
+        self.predict_calls: list[tuple[str, object, NeuralConfig]] = []
 
     def load(self, model_id: str) -> None:
         self.loaded.append(model_id)
 
-    def predict(self, model_id: str, input_data) -> ModelResult:
-        self.predict_calls.append((model_id, input_data))
+    def predict(self, model_id: str, input_data, config: NeuralConfig) -> ModelResult:
+        self.predict_calls.append((model_id, input_data, config))
         return ModelResult(
             value=(
                 Symbol(self.result_value)
@@ -82,3 +82,35 @@ def test_multiple_backends():
 
     assert r1.value == Symbol("hf_result")
     assert r2.value == Symbol("custom_result")
+
+
+def test_config_passthrough():
+    """Config is forwarded to the backend's predict method."""
+    registry = ModelRegistry()
+    backend = MockBackend()
+    registry.register_backend("test:", backend)
+
+    config = NeuralConfig(
+        model_id="test:model",
+        labels=("a", "b"),
+        temperature=0.7,
+    )
+    registry.predict("test:model", "input", config)
+
+    assert len(backend.predict_calls) == 1
+    _, _, received_config = backend.predict_calls[0]
+    assert received_config.labels == ("a", "b")
+    assert received_config.temperature == 0.7
+
+
+def test_default_config_when_none():
+    """Registry creates a default NeuralConfig when none is provided."""
+    registry = ModelRegistry()
+    backend = MockBackend()
+    registry.register_backend("test:", backend)
+
+    registry.predict("test:model", "input")  # no config arg
+
+    _, _, received_config = backend.predict_calls[0]
+    assert received_config.model_id == "test:model"
+    assert received_config.confidence_threshold == 0.5

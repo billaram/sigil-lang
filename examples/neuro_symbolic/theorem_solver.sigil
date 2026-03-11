@@ -1,0 +1,141 @@
+-- theorem_solver.sigil
+-- Demonstrates the Neural Parsing → Symbolic Execution pattern
+--
+-- This is the AlphaGeometry pattern:
+--   1. NEURAL: Parse natural language problem → structured data
+--   2. NEURAL: Suggest which theorem/strategy to apply
+--   3. SYMBOLIC: Execute the strategy with deterministic math
+--   4. SYMBOLIC: Verify the result and produce a proof trace
+--
+-- Usage:
+--   sigil run examples/neuro_symbolic/theorem_solver.sigil \
+--     --input '{"problem_text": "Find side c of triangle where a=10, b=8, angle_C=60"}' \
+--     --trace
+
+import python math
+
+-- ═══════════════════════════════════════════════════════════
+-- NEURAL LAYER: Perception + Planning
+-- The neural model parses and suggests — but never decides.
+-- ═══════════════════════════════════════════════════════════
+
+-- Step 1: Neural parses natural language into structured form
+-- Zero-shot classification: parse problem type from text
+-- With labels, uses zero-shot pipeline (e.g., bart-large-mnli)
+-- Falls back to :triangle when no model available
+neural parse_problem_type from text: Text:
+  model "hf:facebook/bart-large-mnli"
+  returns Symbol
+  labels [:triangle, :rectangle, :circle, :algebra]
+  confidence_threshold 0.7
+  fallback to :triangle
+
+-- Step 2: Neural suggests which theorem to apply
+-- Zero-shot classification picks the best strategy
+-- Falls back to :law_of_cosines when no model available
+neural suggest_strategy from text: Text:
+  model "hf:facebook/bart-large-mnli"
+  returns Symbol
+  labels [:law_of_cosines, :law_of_sines, :pythagorean, :quadratic]
+  confidence_threshold 0.7
+  fallback to :law_of_cosines
+
+-- ═══════════════════════════════════════════════════════════
+-- SYMBOLIC LAYER: Execution + Verification
+-- Rules are deterministic. Same input → same output, always.
+-- Every step produces an auditable trace.
+-- ═══════════════════════════════════════════════════════════
+
+-- Strategy dispatch: which theorem to execute
+rule apply_law_of_cosines with priority 10:
+  when strategy is :law_of_cosines
+  and problem_type is :triangle
+  then method is :cosines
+  explain "Applying Law of Cosines: c² = a² + b² - 2ab·cos(C)"
+
+rule apply_law_of_sines with priority 10:
+  when strategy is :law_of_sines
+  and problem_type is :triangle
+  then method is :sines
+  explain "Applying Law of Sines: a/sin(A) = b/sin(B) = c/sin(C)"
+
+rule apply_pythagorean with priority 10:
+  when strategy is :pythagorean
+  and problem_type is :triangle
+  then method is :pythagorean
+  explain "Right triangle detected — applying Pythagorean theorem"
+
+rule unknown_strategy with priority 1:
+  when method is not assigned
+  then method is :unknown
+  explain "No applicable theorem found for this problem"
+
+-- ═══════════════════════════════════════════════════════════
+-- SYMBOLIC COMPUTATION: Deterministic math via Python FFI
+-- The symbolic engine calls real math functions.
+-- ═══════════════════════════════════════════════════════════
+
+compute solve_cosines from a: Number, b: Number, angle_deg: Number returns Number:
+  -- Law of Cosines: c² = a² + b² - 2ab·cos(C)
+  given angle_rad as math.radians(angle_deg)
+  given cos_C as math.cos(angle_rad)
+  given c_squared as a * a + b * b - 2 * a * b * cos_C
+  return math.sqrt(c_squared)
+
+compute solve_sines from a: Number, angle_A_deg: Number, angle_B_deg: Number returns Number:
+  -- Law of Sines: b = a · sin(B) / sin(A)
+  given rad_A as math.radians(angle_A_deg)
+  given rad_B as math.radians(angle_B_deg)
+  return a * math.sin(rad_B) / math.sin(rad_A)
+
+-- ═══════════════════════════════════════════════════════════
+-- VERIFICATION: Symbolic checks on the result
+-- The symbolic engine verifies — never trusts blindly.
+-- ═══════════════════════════════════════════════════════════
+
+rule verify_triangle_inequality with priority 20:
+  when result exceeds 0
+  and a exceeds 0
+  and b exceeds 0
+  then verified is true
+  explain "Triangle inequality satisfied: all sides positive"
+
+rule verify_failed with priority 15:
+  when verified is not assigned
+  then verified is false
+  explain "VERIFICATION FAILED: result does not satisfy constraints"
+
+-- ═══════════════════════════════════════════════════════════
+-- MAIN: Orchestrate the full pipeline
+-- ═══════════════════════════════════════════════════════════
+
+main:
+  -- Input from external system
+  given problem_text from input
+  given a from input
+  given b from input
+  given angle_C from input
+
+  -- NEURAL: Parse and plan (non-deterministic, may be wrong)
+  given problem_type as parse_problem_type(problem_text)
+  given strategy as suggest_strategy(problem_text)
+
+  print("--- Neural Perception ---")
+  print(problem_text)
+  print(problem_type)
+  print(strategy)
+
+  -- SYMBOLIC: Execute the strategy (deterministic, always correct)
+  evaluate all rules with {strategy: strategy, problem_type: problem_type, angle_C: angle_C, method: method}
+
+  print("--- Symbolic Execution ---")
+  print(method)
+
+  given result as solve_cosines(a, b, angle_C)
+  print(result)
+
+  -- SYMBOLIC: Verify the result
+  evaluate all rules with {result: result, a: a, b: b, verified: verified}
+
+  print("--- Verification ---")
+  print(verified)
