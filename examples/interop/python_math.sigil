@@ -1,0 +1,17 @@
+-- Python FFI interop example
+-- Demonstrates importing and calling Python standard library modules
+
+import python math
+import python json
+
+main:
+  -- Math operations via Python FFI
+  given sqrt_result as math.sqrt(144)
+  print(sqrt_result)
+
+  given pi_val as math.pi
+  print(pi_val)
+
+  -- JSON parsing via Python FFI
+  given data as json.loads("{\"name\": \"sigil\", \"version\": 3}")
+  print(data)

@@ -149,6 +149,14 @@ class Evaluator:
         """Evaluate an import declaration."""
         from pathlib import Path
 
+        # Python FFI imports
+        if decl.kind == "python":
+            return self._eval_python_import(decl, env)
+
+        # Rust imports — not yet implemented (Sprint 3)
+        if decl.kind == "rust":
+            return env
+
         if self.module_loader is None:
             # No module loader configured — try stdlib builtins directly
             if decl.source.startswith("sigil."):
@@ -193,6 +201,40 @@ class Evaluator:
                 # Also register compute funcs
                 if name in module.compute_funcs:
                     self._compute_funcs[name] = module.compute_funcs[name]
+
+        return env
+
+    def _eval_python_import(
+        self, decl: ast.ImportDecl, env: Environment,
+    ) -> Environment:
+        """Evaluate a Python FFI import."""
+        from sigil.ffi.python_interop import import_python_module, import_python_names
+
+        source = decl.source
+
+        try:
+            if decl.names:
+                # from python X import a, b
+                bindings = import_python_names(source, decl.names)
+                for name, val in bindings.items():
+                    env = env.set(name, val)
+            elif decl.alias:
+                # import python X as Y
+                bindings = import_python_module(source)
+                module_record = Record(type_name=decl.alias, fields=bindings)
+                env = env.set(decl.alias, module_record)
+            else:
+                # import python X — bind as record with module name
+                bindings = import_python_module(source)
+                bind_name = source.rsplit(".", maxsplit=1)[-1]
+                module_record = Record(type_name=bind_name, fields=bindings)
+                env = env.set(bind_name, module_record)
+        except SigilRuntimeError:
+            # Module not available — bind empty record so neural stubs still work.
+            # Actual calls to missing module functions will fail at call time.
+            bind_name = decl.alias or source.rsplit(".", maxsplit=1)[-1]
+            if not decl.names:
+                env = env.set(bind_name, Record(type_name=bind_name, fields={}))
 
         return env
 
@@ -905,9 +947,9 @@ class Evaluator:
         if func_name in self._compute_funcs:
             return self._call_compute(func_name, args, env)
 
-        # Check neural functions (return fallback)
+        # Check neural functions (model registry with fallback)
         if func_name in self._neural_funcs:
-            return self._call_neural_stub(func_name)
+            return self._call_neural(func_name, args)
 
         # Check built-in functions
         if func_name in BUILTINS:
@@ -964,13 +1006,77 @@ class Evaluator:
 
         return None
 
-    def _call_neural_stub(self, name: str) -> Value:
-        """Call a neural function stub — return the fallback value."""
+    def _call_neural(self, name: str, args: list[Value]) -> Value:
+        """Call a neural function via the model registry, with fallback."""
+        from sigil.interpreter.trace import NeuralTrace
+        from sigil.neural.registry import get_registry
+
         decl = self._neural_funcs[name]
-        for field in decl.fields:
-            if field.name == "fallback" and isinstance(field.value, ast.Expression):
-                return self.eval_expression(field.value, Environment())
-        return []
+
+        # Extract neural declaration fields
+        model_id = ""
+        threshold = 0.5
+        fallback_value: Value = None
+        for f in decl.fields:
+            if f.name == "model" and isinstance(f.value, ast.Expression):
+                model_id = str(self.eval_expression(f.value, Environment()))
+            elif f.name == "confidence_threshold" and isinstance(f.value, ast.Expression):
+                threshold = float(self.eval_expression(f.value, Environment()))
+            elif f.name == "fallback" and isinstance(f.value, ast.Expression):
+                fallback_value = self.eval_expression(f.value, Environment())
+
+        # Get input data from args
+        input_data: Value = args[0] if args else None
+
+        # Try the model registry
+        registry = get_registry()
+        if model_id and registry.has_backend(model_id):
+            try:
+                result = registry.predict(model_id, input_data)
+                if result.confidence >= threshold:
+                    self.trace.add_neural_trace(NeuralTrace(
+                        function_name=name,
+                        model_id=model_id,
+                        confidence=result.confidence,
+                        threshold=threshold,
+                        used_fallback=False,
+                        result=result.value,
+                        latency_ms=result.latency_ms,
+                    ))
+                    return result.value
+                # Below threshold — use fallback
+                self.trace.add_neural_trace(NeuralTrace(
+                    function_name=name,
+                    model_id=model_id,
+                    confidence=result.confidence,
+                    threshold=threshold,
+                    used_fallback=True,
+                    result=fallback_value,
+                    latency_ms=result.latency_ms,
+                ))
+                return fallback_value
+            except Exception as exc:
+                self.trace.add_neural_trace(NeuralTrace(
+                    function_name=name,
+                    model_id=model_id,
+                    confidence=0.0,
+                    threshold=threshold,
+                    used_fallback=True,
+                    result=fallback_value,
+                    error=str(exc),
+                ))
+                return fallback_value
+
+        # No backend available — return fallback (stub behavior)
+        self.trace.add_neural_trace(NeuralTrace(
+            function_name=name,
+            model_id=model_id,
+            confidence=0.0,
+            threshold=threshold,
+            used_fallback=True,
+            result=fallback_value,
+        ))
+        return fallback_value
 
     def _eval_constructor(self, expr: ast.ConstructorExpr, env: Environment) -> Value:
         """Evaluate a constructor expression like 'approved with rate: value'."""

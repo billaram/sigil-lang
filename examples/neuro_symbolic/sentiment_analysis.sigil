@@ -1,0 +1,29 @@
+-- sentiment_analysis.sigil
+-- Demonstrates the neural bridge with confidence thresholds and fallbacks
+-- Uses HuggingFace backend when transformers is installed, else fallback
+
+neural classify_sentiment from text: Text:
+  model "hf:distilbert-base-uncased-finetuned-sst-2-english"
+  returns Symbol
+  confidence_threshold 0.7
+  fallback to :neutral
+
+rule positive_response with priority 10:
+  when sentiment is :positive
+  then print("Customer is happy!")
+  explain "Positive sentiment detected"
+
+rule negative_response with priority 10:
+  when sentiment is :negative
+  then print("Customer needs attention")
+  explain "Negative sentiment detected"
+
+rule neutral_response with priority 5:
+  when sentiment is :neutral
+  then print("Neutral sentiment — no action needed")
+  explain "Neutral or unknown sentiment"
+
+main:
+  given sentiment as classify_sentiment("This product is amazing!")
+  print(sentiment)
+  evaluate rules
