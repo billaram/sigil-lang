@@ -111,6 +111,8 @@ class Parser:
                     declarations.append(self._parse_neural_decl())
                 case TokenType.MAIN:
                     declarations.append(self._parse_main_decl())
+                case TokenType.EXPORT:
+                    declarations.append(self._parse_export_decl())
                 case TokenType.DOC_COMMENT:
                     self._advance()  # skip doc comments for now
                 case _:
@@ -135,10 +137,27 @@ class Parser:
         return ast.ModuleDecl(location=loc, path=path)
 
     def _parse_dotted_name(self) -> str:
-        parts = [self._expect(TokenType.IDENTIFIER).value]
+        parts = [self._expect_identifier_or_keyword().value]
         while self._match(TokenType.DOT):
-            parts.append(self._expect(TokenType.IDENTIFIER).value)
+            parts.append(self._expect_identifier_or_keyword().value)
         return ".".join(parts)
+
+    def _expect_identifier_or_keyword(self) -> Token:
+        """Accept an IDENTIFIER or a keyword token as a name (for module paths)."""
+        tok = self._current()
+        if self._peek() == TokenType.IDENTIFIER:
+            return self._expect(TokenType.IDENTIFIER)
+        # Keywords that are valid as module path segments
+        keyword_types = {
+            TokenType.LIST, TokenType.MATCH, TokenType.TYPE, TokenType.RULE,
+            TokenType.IMPORT, TokenType.EXPORT, TokenType.MODULE,
+        }
+        if self._peek() in keyword_types:
+            self._advance()
+            return tok
+        raise self._error(
+            f"Expected identifier, got {tok.type.name} ({tok.value!r})"
+        )
 
     # --- Import declarations ---
 
@@ -182,6 +201,15 @@ class Parser:
         return ast.ImportDecl(
             location=loc, source=source, kind=kind, names=tuple(names)
         )
+
+    def _parse_export_decl(self) -> ast.ExportDecl:
+        loc = self._loc()
+        self._expect(TokenType.EXPORT)
+        names = [self._expect(TokenType.IDENTIFIER).value]
+        while self._match(TokenType.COMMA):
+            names.append(self._expect(TokenType.IDENTIFIER).value)
+        self._skip_newlines()
+        return ast.ExportDecl(location=loc, names=tuple(names))
 
     def _parse_rust_path(self) -> str:
         parts = [self._expect(TokenType.IDENTIFIER).value]
@@ -402,6 +430,27 @@ class Parser:
                 conditions.append(compound)
             self._skip_newlines()
 
+        # Optional temporal constraint: within <expr> <unit>
+        temporal: ast.TemporalConstraint | None = None
+        if self._check(TokenType.WITHIN):
+            temporal_loc = self._loc()
+            self._advance()
+            # Parse duration — but don't consume the unit suffix on the number
+            # since we want it as the temporal unit, not on the literal
+            duration = self._parse_expression()
+            # The unit may already have been captured by the literal parser
+            # (as a UNIT token), or it's a standalone identifier like "minutes"
+            if isinstance(duration, ast.Literal) and duration.unit is not None:
+                unit = duration.unit
+            elif self._check(TokenType.UNIT):
+                unit = self._advance().value
+            else:
+                unit = self._expect_identifier_or_keyword().value
+            temporal = ast.TemporalConstraint(
+                location=temporal_loc, duration=duration, unit=unit,
+            )
+            self._skip_newlines()
+
         # Then action
         self._expect(TokenType.THEN)
         action = self._parse_action()
@@ -431,6 +480,7 @@ class Parser:
             action=action,
             explain=explain,
             trace=tuple(trace),
+            temporal=temporal,
         )
 
     def _parse_given_clause(self) -> ast.GivenClause:
@@ -474,20 +524,20 @@ class Parser:
         if self._check(TokenType.ANY, TokenType.ALL, TokenType.NONE_):
             return self._parse_quantified_condition()
 
-        # Parse left-hand expression
-        left = self._parse_expression()
+        # Parse left-hand expression (use _parse_additive to avoid consuming |>)
+        left = self._parse_additive()
 
         # Now determine the condition type based on what follows
         if self._check(TokenType.EXCEEDS):
             self._advance()
-            right = self._parse_expression()
+            right = self._parse_additive()
             return ast.ComparisonCond(
                 location=loc, left=left, operator="exceeds", right=right
             )
 
         if self._check(TokenType.EQUALS):
             self._advance()
-            right = self._parse_expression()
+            right = self._parse_additive()
             return ast.ComparisonCond(
                 location=loc, left=left, operator="equals", right=right
             )
@@ -497,7 +547,7 @@ class Parser:
 
         if self._check(TokenType.IN):
             self._advance()
-            collection = self._parse_expression()
+            collection = self._parse_additive()
             return ast.MembershipCond(
                 location=loc, element=left, collection=collection
             )
@@ -505,14 +555,14 @@ class Parser:
         if self._check(TokenType.NOT) and self._peek_ahead_type(1) == TokenType.IN:
             self._advance()  # not
             self._advance()  # in
-            collection = self._parse_expression()
+            collection = self._parse_additive()
             return ast.MembershipCond(
                 location=loc, element=left, collection=collection, negated=True
             )
 
         if self._check(TokenType.CONTAINS):
             self._advance()
-            element = self._parse_expression()
+            element = self._parse_additive()
             return ast.ContainsCond(
                 location=loc, collection=left, element=element
             )
@@ -520,7 +570,7 @@ class Parser:
         if self._check(TokenType.STARTS):
             self._advance()
             self._expect(TokenType.WITH)
-            pattern = self._parse_expression()
+            pattern = self._parse_additive()
             return ast.StringCond(
                 location=loc, string=left, operator="starts with", pattern=pattern
             )
@@ -528,7 +578,7 @@ class Parser:
         if self._check(TokenType.ENDS):
             self._advance()
             self._expect(TokenType.WITH)
-            pattern = self._parse_expression()
+            pattern = self._parse_additive()
             return ast.StringCond(
                 location=loc, string=left, operator="ends with", pattern=pattern
             )
@@ -536,7 +586,7 @@ class Parser:
         if self._check(TokenType.MATCHES):
             self._advance()
             self._expect(TokenType.PATTERN)
-            pattern = self._parse_expression()
+            pattern = self._parse_additive()
             return ast.StringCond(
                 location=loc, string=left, operator="matches pattern", pattern=pattern
             )
@@ -544,7 +594,7 @@ class Parser:
         if self._check(TokenType.HAS):
             self._advance()
             if self._match(TokenType.COUNT):
-                count = self._parse_expression()
+                count = self._parse_additive()
                 return ast.HasCountCond(
                     location=loc, collection=left, count=count
                 )
@@ -553,7 +603,7 @@ class Parser:
         if self._check(TokenType.GT, TokenType.LT, TokenType.GTE,
                         TokenType.LTE, TokenType.EQ, TokenType.NEQ):
             op = self._advance().value
-            right = self._parse_expression()
+            right = self._parse_additive()
             return ast.ComparisonCond(
                 location=loc, left=left, operator=op, right=right
             )
@@ -581,12 +631,12 @@ class Parser:
                 return ast.IsEmptyCond(location=loc, expression=left, negated=True)
             if self._check(TokenType.IN):
                 self._advance()
-                collection = self._parse_expression()
+                collection = self._parse_additive()
                 return ast.MembershipCond(
                     location=loc, element=left, collection=collection, negated=True
                 )
             # "is not <value>"
-            right = self._parse_expression()
+            right = self._parse_additive()
             return ast.ComparisonCond(
                 location=loc, left=left, operator="is not", right=right
             )
@@ -594,7 +644,7 @@ class Parser:
         # is below
         if self._check(TokenType.BELOW):
             self._advance()
-            right = self._parse_expression()
+            right = self._parse_additive()
             return ast.ComparisonCond(
                 location=loc, left=left, operator="is below", right=right
             )
@@ -602,9 +652,9 @@ class Parser:
         # is between X and Y
         if self._check(TokenType.BETWEEN):
             self._advance()
-            low = self._parse_expression()
+            low = self._parse_additive()
             self._expect(TokenType.AND)
-            high = self._parse_expression()
+            high = self._parse_additive()
             return ast.ComparisonCond(
                 location=loc, left=left, operator="is between",
                 right=low, right2=high,
@@ -614,12 +664,12 @@ class Parser:
         if self._check(TokenType.AT):
             self._advance()
             if self._match(TokenType.LEAST):
-                right = self._parse_expression()
+                right = self._parse_additive()
                 return ast.ComparisonCond(
                     location=loc, left=left, operator="is at least", right=right
                 )
             if self._match(TokenType.MOST):
-                right = self._parse_expression()
+                right = self._parse_additive()
                 return ast.ComparisonCond(
                     location=loc, left=left, operator="is at most", right=right
                 )
@@ -640,13 +690,13 @@ class Parser:
         # is in
         if self._check(TokenType.IN):
             self._advance()
-            collection = self._parse_expression()
+            collection = self._parse_additive()
             return ast.MembershipCond(
                 location=loc, element=left, collection=collection
             )
 
         # is <value> (equality comparison)
-        right = self._parse_expression()
+        right = self._parse_additive()
         return ast.ComparisonCond(
             location=loc, left=left, operator="is", right=right
         )
@@ -657,7 +707,7 @@ class Parser:
 
         variable = self._expect(TokenType.IDENTIFIER).value
         self._expect(TokenType.IN)
-        collection = self._parse_expression()
+        collection = self._parse_additive()
 
         # Accept has/have as explicit bridge, or parse condition directly
         # (e.g. "any symptom in X is in Y" where condition starts with "is")
@@ -683,7 +733,7 @@ class Parser:
 
         if self._check(TokenType.EXCEEDS):
             self._advance()
-            right = self._parse_expression()
+            right = self._parse_additive()
             return ast.ComparisonCond(location=loc, left=left, operator="exceeds", right=right)
 
         if self._check(TokenType.IS):
@@ -691,7 +741,7 @@ class Parser:
 
         if self._check(TokenType.IN):
             self._advance()
-            collection = self._parse_expression()
+            collection = self._parse_additive()
             return ast.MembershipCond(location=loc, element=left, collection=collection)
 
         # Fallback: parse a full condition
@@ -966,6 +1016,9 @@ class Parser:
         if self._check(TokenType.EVALUATE):
             return self._parse_evaluate_stmt()
 
+        if self._check(TokenType.QUERY):
+            return self._parse_query_stmt()
+
         # Expression statement or becomes statement
         expr = self._parse_expression()
 
@@ -1077,10 +1130,81 @@ class Parser:
         argument = self._parse_expression()
         return ast.EvaluateStmt(location=loc, target=target, argument=argument)
 
+    def _parse_query_stmt(self) -> ast.QueryStmt:
+        loc = self._loc()
+        self._expect(TokenType.QUERY)
+        goal = self._expect(TokenType.IDENTIFIER).value
+        argument: ast.Expression | None = None
+        if self._match(TokenType.WITH):
+            argument = self._parse_expression()
+        return ast.QueryStmt(location=loc, goal=goal, argument=argument)
+
     # --- Expressions (precedence climbing) ---
 
     def _parse_expression(self) -> ast.Expression:
-        return self._parse_additive()
+        return self._parse_pipeline()
+
+    def _parse_pipeline(self) -> ast.Expression:
+        """Parse pipeline expressions: expr |> op |> op ..."""
+        expr = self._parse_additive()
+
+        if not self._check(TokenType.PIPE):
+            return expr
+
+        ops: list[ast.PipeOp] = []
+        while self._match(TokenType.PIPE):
+            op = self._parse_pipe_op()
+            ops.append(op)
+
+        return ast.PipelineExpr(
+            location=expr.location,
+            source=expr,
+            operations=tuple(ops),
+        )
+
+    def _parse_pipe_op(self) -> ast.PipeOp:
+        """Parse a single pipeline operation after |>."""
+        loc = self._loc()
+
+        if self._check(TokenType.FILTER):
+            self._advance()
+            self._expect(TokenType.WHERE)
+            condition = self._parse_condition()
+            return ast.PipeOp(location=loc, kind="filter", condition=condition)
+
+        if self._check(TokenType.SORT):
+            self._advance()
+            self._expect(TokenType.BY)
+            field_expr = self._parse_primary()
+            direction = "ascending"
+            if self._match(TokenType.ASCENDING):
+                direction = "ascending"
+            elif self._match(TokenType.DESCENDING):
+                direction = "descending"
+            return ast.PipeOp(
+                location=loc, kind="sort", args=(field_expr,), direction=direction,
+            )
+
+        if self._check(TokenType.TAKE):
+            self._advance()
+            if self._match(TokenType.FIRST):
+                count = self._parse_additive()
+                return ast.PipeOp(location=loc, kind="take_first", args=(count,))
+            if self._match(TokenType.LAST):
+                count = self._parse_additive()
+                return ast.PipeOp(location=loc, kind="take_last", args=(count,))
+            raise self._error("Expected 'first' or 'last' after 'take'")
+
+        if self._check(TokenType.MAP):
+            self._advance()
+            self._expect(TokenType.TO)
+            expr = self._parse_additive()
+            return ast.PipeOp(location=loc, kind="map", args=(expr,))
+
+        raise self._error(
+            f"Expected pipeline operation (filter, sort, take, map), "
+            f"got {self._current().type.name}"
+        )
 
     def _parse_additive(self) -> ast.Expression:
         left = self._parse_multiplicative()
@@ -1177,12 +1301,18 @@ class Parser:
         if self._check(TokenType.NUMBER):
             tok = self._advance()
             value = tok.value
-            # Skip unit token if present (already lexed as separate token)
-            if self._match(TokenType.UNIT):
-                pass  # Unit info is in the following UNIT token; we keep it simple
+            # Capture unit token if present
+            unit_str: str | None = None
+            unit_tok = self._match(TokenType.UNIT)
+            if unit_tok:
+                unit_str = unit_tok.value
             if "." in value:
-                return ast.Literal(location=loc, value=float(value.replace("_", "")), kind="number")
-            return ast.Literal(location=loc, value=int(value.replace("_", "")), kind="number")
+                num_val: int | float = float(value.replace("_", ""))
+            else:
+                num_val = int(value.replace("_", ""))
+            return ast.Literal(
+                location=loc, value=num_val, kind="number", unit=unit_str,
+            )
 
         # String literal
         if self._check(TokenType.STRING):
@@ -1229,6 +1359,13 @@ class Parser:
         # Match expression
         if self._check(TokenType.MATCH):
             return self._parse_match_expr()
+
+        # Lambda expression: compute from x: Number returns Number: return x + 1
+        # Also: compute from: expr (no params)
+        if self._check(TokenType.COMPUTE) and self._peek_ahead_type(1) in (
+            TokenType.FROM, TokenType.RETURNS, TokenType.COLON,
+        ):
+            return self._parse_lambda_expr()
 
         # Map keyword used as identifier in certain contexts
         if self._check(TokenType.MAP):
@@ -1321,3 +1458,42 @@ class Parser:
 
         self._expect(TokenType.DEDENT)
         return ast.MatchExpr(location=loc, subject=subject, arms=tuple(arms))
+
+    def _parse_lambda_expr(self) -> ast.LambdaExpr:
+        """Parse an inline anonymous compute expression.
+
+        Syntax: compute from x: Number returns Number: return x + 1
+        """
+        loc = self._loc()
+        self._expect(TokenType.COMPUTE)
+
+        params: list[ast.Param] = []
+        if self._match(TokenType.FROM):
+            params = self._parse_param_list()
+
+        return_type = None
+        if self._match(TokenType.RETURNS):
+            return_type = self._parse_type_ref()
+
+        self._expect(TokenType.COLON)
+
+        # Check if body is indented block or inline expression
+        if self._check(TokenType.NEWLINE):
+            self._skip_newlines()
+            self._expect(TokenType.INDENT)
+            body = tuple(self._parse_statement_block())
+            self._expect(TokenType.DEDENT)
+        else:
+            # Single expression body (inline): "return x + 1"
+            if self._match(TokenType.RETURN):
+                body_expr = self._parse_expression()
+            else:
+                body_expr = self._parse_expression()
+            body = (ast.ReturnStmt(location=loc, value=body_expr),)
+
+        return ast.LambdaExpr(
+            location=loc,
+            params=tuple(params),
+            return_type=return_type,
+            body=body,
+        )

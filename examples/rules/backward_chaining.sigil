@@ -1,0 +1,29 @@
+-- Backward Chaining Example: Can-Fly Bird Logic
+-- Demonstrates goal-driven evaluation using query
+
+-- A bird can fly if it has wings and is not a penguin
+-- A penguin is a bird but cannot fly
+
+rule has_wings:
+  when species is :bird
+  then wings is true
+
+rule is_penguin:
+  when species is :penguin
+  then wings is true
+
+rule can_fly_bird:
+  when wings is true
+  and species is :bird
+  then can_fly is true
+  explain "Birds with wings can fly"
+
+rule cannot_fly_penguin:
+  when species is :penguin
+  then can_fly is false
+  explain "Penguins cannot fly despite having wings"
+
+main:
+  given species as :bird
+  query can_fly
+  print(can_fly)

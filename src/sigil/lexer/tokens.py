@@ -87,6 +87,8 @@ class TokenType(Enum):
     DESCENDING = auto()
     ASSIGNED = auto()
     COUNT = auto()
+    QUERY = auto()
+    WITHIN = auto()
 
     # --- Literals ---
     NUMBER = auto()
@@ -216,6 +218,8 @@ KEYWORDS: dict[str, TokenType] = {
     "descending": TokenType.DESCENDING,
     "assigned": TokenType.ASSIGNED,
     "count": TokenType.COUNT,
+    "query": TokenType.QUERY,
+    "within": TokenType.WITHIN,
 }
 
 # Known unit suffixes (lexer emits UNIT token for these after a NUMBER)

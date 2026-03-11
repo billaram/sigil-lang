@@ -101,10 +101,13 @@ RuleBody        <- (MetaField NEWLINE)*
                    (GivenClause NEWLINE)*
                    WhenClause NEWLINE
                    (AndOrClause NEWLINE)*
+                   (TemporalClause NEWLINE)?
                    ThenClause NEWLINE
                    (ExplainClause NEWLINE)?
                    (TraceClause)?
                    (UsingClause NEWLINE)?
+
+TemporalClause  <- 'within' Spacing Expression Spacing Identifier
 
 MetaField       <- ('version' / 'author' / 'tags') Spacing Expression
 
@@ -233,7 +236,10 @@ Statement       <- GivenStatement
                  / ForStatement
                  / BecomesStatement
                  / EvaluateStatement
+                 / QueryStatement
                  / ExpressionStatement
+
+QueryStatement  <- 'query' Spacing Identifier (Spacing 'with' Spacing Expression)?
 
 BecomesStatement <- Expression Spacing 'becomes' Spacing Expression
 

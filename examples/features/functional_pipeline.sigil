@@ -1,0 +1,24 @@
+-- Closures combined with pipeline map operations
+-- Demonstrates: lambda, pipeline, higher-order
+
+compute apply_to_list from f, items returns Number:
+  given results as items |> map to f(it)
+  return results
+
+compute double from x: Number returns Number:
+  return x * 2
+
+main:
+  given nums as [1, 2, 3, 4, 5]
+
+  -- Use named function with pipeline
+  given doubled as nums |> map to double(it)
+  print(doubled)
+
+  -- Use lambda with pipeline
+  given tripled as nums |> map to it * 3
+  print(tripled)
+
+  -- Use higher-order function
+  given result as apply_to_list(double, nums)
+  print(result)

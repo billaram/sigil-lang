@@ -139,6 +139,13 @@ class ConstDecl(Node):
 # ============================================================
 
 @dataclass(frozen=True)
+class TemporalConstraint(Node):
+    """Temporal constraint: 'within <duration> <unit>'."""
+    duration: Expression
+    unit: str
+
+
+@dataclass(frozen=True)
 class RuleDecl(Node):
     name: str
     conditions: tuple[Condition, ...]
@@ -148,6 +155,7 @@ class RuleDecl(Node):
     explain: str | None = None
     trace: tuple[TraceField, ...] = ()
     metadata: tuple[MetaField, ...] = ()
+    temporal: TemporalConstraint | None = None
 
 
 @dataclass(frozen=True)
@@ -391,6 +399,13 @@ class ExprStmt(Statement):
     expression: Expression
 
 
+@dataclass(frozen=True)
+class QueryStmt(Statement):
+    """Backward chaining query: 'query <goal> [with <expr>]'."""
+    goal: str
+    argument: Expression | None = None
+
+
 # ============================================================
 # Expressions
 # ============================================================
@@ -404,6 +419,7 @@ class Expression(Node):
 class Literal(Expression):
     value: int | float | str | bool | None
     kind: str = "number"  # "number", "string", "bool", "none"
+    unit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -497,6 +513,14 @@ class PipeOp(Node):
 
 
 @dataclass(frozen=True)
+class LambdaExpr(Expression):
+    """Inline anonymous compute expression."""
+    params: tuple[Param, ...]
+    return_type: TypeRef | None
+    body: tuple[Statement, ...]
+
+
+@dataclass(frozen=True)
 class ConstructorExpr(Expression):
     """Enum constructor like 'approved with rate: value'."""
     name: str
@@ -513,7 +537,13 @@ class EmptyExpr(Expression):
 # Union types for use in other nodes
 # ============================================================
 
-Declaration = TypeDecl | ConstDecl | RuleDecl | ComputeDecl | NeuralDecl | MainDecl
+@dataclass(frozen=True)
+class ExportDecl(Node):
+    """Export declaration: export name1, name2, ..."""
+    names: tuple[str, ...]
+
+
+Declaration = TypeDecl | ConstDecl | RuleDecl | ComputeDecl | NeuralDecl | MainDecl | ExportDecl
 
 
 # ============================================================

@@ -1,0 +1,22 @@
+-- Temporal Monitor Example: Temperature Monitoring
+-- Demonstrates temporal constraints with 'within' keyword
+
+define TEMP_THRESHOLD as 100 degrees
+define CRITICAL_THRESHOLD as 150 degrees
+
+rule high_temperature with priority 5:
+  when temperature exceeds 100
+  within 30 seconds
+  then alert_level is :warning
+  explain "Temperature exceeded threshold"
+
+rule critical_temperature with priority 10:
+  when temperature exceeds 150
+  within 10 seconds
+  then alert_level is :critical
+  explain "Temperature critically high"
+
+rule normal_temperature:
+  when temperature is below 100
+  then alert_level is :normal
+  explain "Temperature within normal range"

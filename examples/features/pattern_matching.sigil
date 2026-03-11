@@ -1,0 +1,31 @@
+-- Pattern matching example
+-- Demonstrates: match expressions, symbol matching, wildcard
+
+type Severity is one of:
+  critical
+  high
+  medium
+  low
+
+compute severity_label from level: Symbol returns Text:
+  return match level:
+    :critical -> "CRITICAL - Immediate action required"
+    :high -> "HIGH - Action required within 1 hour"
+    :medium -> "MEDIUM - Action required within 24 hours"
+    :low -> "LOW - No immediate action"
+    _ -> "UNKNOWN - Unrecognized severity"
+
+compute priority_score from level: Symbol returns Number:
+  return match level:
+    :critical -> 100
+    :high -> 75
+    :medium -> 50
+    :low -> 25
+    _ -> 0
+
+main:
+  given level as :high
+  given label as severity_label(level)
+  given score as priority_score(level)
+  print(label)
+  print(score)

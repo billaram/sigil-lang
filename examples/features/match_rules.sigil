@@ -1,0 +1,17 @@
+-- Match expressions in rule conditions and actions
+-- Demonstrates: match inside compute, used by rules
+
+compute risk_label from score: Number returns Text:
+  return match score:
+    100 -> "Maximum Risk"
+    _ -> "Standard Risk"
+
+rule high_risk with priority 10:
+  when risk_score exceeds 80
+  then:
+    given label as risk_label(risk_score)
+    print(label)
+
+main:
+  given risk_score as 100
+  evaluate all rules with {risk_score: risk_score}

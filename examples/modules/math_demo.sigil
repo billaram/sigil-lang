@@ -1,0 +1,17 @@
+-- Demonstrates importing sigil.math standard library
+import sigil.math
+
+main:
+  -- Basic math operations
+  given root as sqrt(144)
+  given absolute as abs(-42)
+  given rounded as round(3.14159, 2)
+
+  print("sqrt(144) = ")
+  print(root)
+  print("abs(-42) = ")
+  print(absolute)
+  print("round(3.14159, 2) = ")
+  print(rounded)
+  print("PI = ")
+  print(PI)

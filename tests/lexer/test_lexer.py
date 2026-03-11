@@ -187,6 +187,14 @@ class TestKeywords:
     def test_becomes_keyword(self):
         assert token_types("becomes") == [TokenType.BECOMES]
 
+    def test_query_keyword(self):
+        tokens = tokenize("query")
+        assert tokens[0].type == TokenType.QUERY
+
+    def test_within_keyword(self):
+        tokens = tokenize("within")
+        assert tokens[0].type == TokenType.WITHIN
+
     def test_all_keywords_recognized(self):
         """Ensure all keywords from the grammar are recognized."""
         keywords_to_test = [
@@ -196,6 +204,7 @@ class TestKeywords:
             "module", "type", "neural", "explain", "with", "true", "false",
             "using", "compute", "return", "trace", "match", "for", "each",
             "evaluate", "main", "has", "have", "returns", "record", "one", "of",
+            "query", "within",
         ]
         for kw in keywords_to_test:
             tokens = tokenize(kw)

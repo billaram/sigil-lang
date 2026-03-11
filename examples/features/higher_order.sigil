@@ -1,0 +1,30 @@
+-- Higher-order functions example
+-- Demonstrates: functions as values, passing functions, closures
+
+compute apply from f, x: Number returns Number:
+  return f(x)
+
+compute compose from f, g, x: Number returns Number:
+  return f(g(x))
+
+compute double from x: Number returns Number:
+  return x * 2
+
+compute increment from x: Number returns Number:
+  return x + 1
+
+compute square from x: Number returns Number:
+  return x * x
+
+main:
+  given a as apply(double, 5)
+  print(a)
+
+  given b as apply(increment, 5)
+  print(b)
+
+  given c as compose(double, increment, 5)
+  print(c)
+
+  given d as compose(increment, double, 5)
+  print(d)

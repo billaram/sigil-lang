@@ -1,0 +1,11 @@
+-- Demonstrates selective imports (from X import a, b)
+from sigil.math import sqrt, PI, pow
+from sigil.text import uppercase
+
+main:
+  given circle_area as PI * pow(5, 2)
+  print("Circle area (r=5): ")
+  print(circle_area)
+
+  given label as uppercase("radius")
+  print(label)

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sigil.ast import nodes as ast
+    from sigil.interpreter.environment import Environment
 
 
 @dataclass(frozen=True)
@@ -47,8 +51,26 @@ class Variant:
         return f"{self.type_name}.{self.variant_name}({inner})"
 
 
+@dataclass(frozen=True)
+class Closure:
+    """A function value with captured environment."""
+
+    params: tuple[str, ...]
+    body: tuple[ast.Statement, ...]
+    env: Environment
+    name: str | None = None
+
+    def __str__(self) -> str:
+        name = self.name or "<anonymous>"
+        params = ", ".join(self.params)
+        return f"<closure {name}({params})>"
+
+    def __hash__(self) -> int:
+        return id(self)
+
+
 # The Value union — all possible runtime values in Sigil
-Value = int | float | str | bool | None | Symbol | Record | Variant | list[Any]
+Value = int | float | str | bool | None | Symbol | Record | Variant | list[Any] | Closure
 
 # Sentinel for unbound variables
 _UNBOUND = object()
@@ -56,6 +78,8 @@ _UNBOUND = object()
 
 def format_value(v: Value) -> str:
     """Format a Sigil value for display."""
+    if v is _UNBOUND:
+        return "none"
     if v is None:
         return "none"
     if isinstance(v, bool):
@@ -69,6 +93,8 @@ def format_value(v: Value) -> str:
     if isinstance(v, Record):
         return str(v)
     if isinstance(v, Variant):
+        return str(v)
+    if isinstance(v, Closure):
         return str(v)
     if isinstance(v, list):
         inner = ", ".join(format_value(x) for x in v)
