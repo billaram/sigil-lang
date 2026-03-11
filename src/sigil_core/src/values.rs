@@ -3,7 +3,7 @@
 //! Mirrors the Python `Value` union type for cross-boundary marshaling.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyNone, PyString};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -59,7 +59,7 @@ impl SigilValue {
                 fields,
             });
         }
-        // Check for Symbol (has .name attribute)
+        // Check for Symbol (has .name attribute and type is Symbol)
         if let Ok(name) = obj.getattr("name") {
             if let Ok(name_str) = name.extract::<String>() {
                 if obj.get_type().name()? == "Symbol" {
@@ -74,29 +74,29 @@ impl SigilValue {
     /// Convert a SigilValue back to a Python object.
     pub fn to_python(&self, py: Python<'_>) -> PyResult<PyObject> {
         match self {
-            SigilValue::None => Ok(PyNone::get(py).into_pyobject(py)?.into_any().unbind()),
-            SigilValue::Bool(b) => Ok(b.into_pyobject(py)?.into_any().unbind()),
+            SigilValue::None => Ok(py.None()),
+            SigilValue::Bool(b) => Ok((*b).into_pyobject(py)?.to_owned().into_any().unbind()),
             SigilValue::Int(i) => Ok(i.into_pyobject(py)?.into_any().unbind()),
             SigilValue::Float(f) => Ok(f.into_pyobject(py)?.into_any().unbind()),
             SigilValue::Text(s) => Ok(s.into_pyobject(py)?.into_any().unbind()),
             SigilValue::Symbol(name) => {
                 let dict = PyDict::new(py);
                 dict.set_item("name", name)?;
-                Ok(dict.into_pyobject(py)?.into_any().unbind())
+                Ok(dict.into_any().unbind())
             }
             SigilValue::Record { fields, .. } => {
                 let dict = PyDict::new(py);
                 for (k, v) in fields {
                     dict.set_item(k, v.to_python(py)?)?;
                 }
-                Ok(dict.into_pyobject(py)?.into_any().unbind())
+                Ok(dict.into_any().unbind())
             }
             SigilValue::List(items) => {
                 let list = PyList::empty(py);
                 for item in items {
                     list.append(item.to_python(py)?)?;
                 }
-                Ok(list.into_pyobject(py)?.into_any().unbind())
+                Ok(list.into_any().unbind())
             }
         }
     }

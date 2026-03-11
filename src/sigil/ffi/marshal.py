@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from sigil.errors import SigilRuntimeError
 from sigil.interpreter.trace import ProgramTrace
@@ -61,7 +62,9 @@ def wrap_python_callable(func: Callable[..., Any]) -> Callable[[list[Value], Pro
             result = func(*py_args)
         except Exception as exc:
             from sigil.ffi.errors import translate_python_error
-            raise translate_python_error(exc, f"calling {getattr(func, '__name__', repr(func))}") from exc
+
+            name = getattr(func, "__name__", repr(func))
+            raise translate_python_error(exc, f"calling {name}") from exc
         return python_to_sigil(result)
 
     wrapper.__name__ = getattr(func, "__name__", "<python>")

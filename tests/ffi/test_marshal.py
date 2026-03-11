@@ -7,7 +7,6 @@ from sigil.ffi.marshal import python_to_sigil, sigil_to_python, wrap_python_call
 from sigil.interpreter.trace import ProgramTrace
 from sigil.interpreter.values import Closure, Record, Symbol
 
-
 # ------------------------------------------------------------------
 # sigil_to_python
 # ------------------------------------------------------------------

@@ -2,10 +2,7 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from sigil.interpreter.values import Symbol
-from sigil.interpreter.trace import NeuralTrace
 from sigil.lexer.lexer import tokenize
 from sigil.neural.backend import ModelResult
 from sigil.neural.registry import ModelRegistry

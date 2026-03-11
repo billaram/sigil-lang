@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sigil.neural.backend import ModelBackend, ModelResult
 from sigil.interpreter.values import Value
+from sigil.neural.backend import ModelBackend, ModelResult
 
 
 class ModelRegistry:
@@ -38,7 +38,10 @@ class ModelRegistry:
         for prefix, backend in self._backends.items():
             if model_id.startswith(prefix):
                 return backend
-        msg = f"No backend registered for model '{model_id}'. Register a backend with a matching prefix."
+        msg = (
+            f"No backend registered for model '{model_id}'. "
+            "Register a backend with a matching prefix."
+        )
         raise LookupError(msg)
 
     def has_backend(self, model_id: str) -> bool:

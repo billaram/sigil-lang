@@ -3,7 +3,7 @@
 import pytest
 
 from sigil.interpreter.values import Symbol
-from sigil.neural.backend import ModelBackend, ModelResult
+from sigil.neural.backend import ModelResult
 from sigil.neural.registry import ModelRegistry
 
 
@@ -22,7 +22,11 @@ class MockBackend:
     def predict(self, model_id: str, input_data) -> ModelResult:
         self.predict_calls.append((model_id, input_data))
         return ModelResult(
-            value=Symbol(self.result_value) if isinstance(self.result_value, str) else self.result_value,
+            value=(
+                Symbol(self.result_value)
+                if isinstance(self.result_value, str)
+                else self.result_value
+            ),
             confidence=self.confidence,
             model_id=model_id,
             latency_ms=1.0,

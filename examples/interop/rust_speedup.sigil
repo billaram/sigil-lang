@@ -1,0 +1,22 @@
+-- rust_speedup.sigil
+-- Demonstrates Rust core acceleration for pattern matching
+-- The Rust core provides: ReteNetwork, ConstraintSolver, trace serialization
+
+-- This example uses the standard Sigil rule engine
+-- which transparently uses Rust core when available
+
+rule high_temperature with priority 10:
+  when temperature exceeds 100
+  and status is :active
+  then print("ALERT: High temperature detected!")
+  explain "Temperature exceeded safe threshold"
+
+rule normal_temperature with priority 5:
+  when temperature is between 50 and 100
+  then print("Temperature is normal")
+  explain "Temperature within acceptable range"
+
+main:
+  given temperature as 150
+  given status as :active
+  evaluate rules
