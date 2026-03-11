@@ -636,7 +636,7 @@ main:
   print(ptype)  -- :triangle (from real model!)
 ```
 
-### Sprint B: LLM Backends (~25 tests)
+### Sprint B: LLM Backends (~25 tests) — COMPLETE
 
 **Goal**: Claude and OpenAI APIs work as neural backends. Structured output returns Records.
 
@@ -669,7 +669,7 @@ main:
   print(plan)  -- record(strategy: :law_of_cosines, reasoning: "...", confidence: 0.92)
 ```
 
-### Sprint C: ONNX + Python Callable + Timeout (~15 tests)
+### Sprint C: ONNX + Python Callable + Timeout (~15 tests) — COMPLETE
 
 **Goal**: Edge inference and custom models work. Timeout enforcement.
 
