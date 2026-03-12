@@ -276,7 +276,7 @@ class TestOperators:
             tokenize("! x")
 
     def test_invalid_pipe(self):
-        with pytest.raises(SigilLexError, match="did you mean"):
+        with pytest.raises(SigilLexError, match="Unexpected character"):
             tokenize("| x")
 
 

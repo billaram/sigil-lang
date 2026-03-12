@@ -1,10 +1,10 @@
 # Project Status — KEEP THIS UPDATED
 
 > **Last updated**: 2026-03-11
-> **Current phase**: Phase 3 (Ecosystem Integration) — COMPLETE (all 3 sprints + Neural Bridge v2)
-> **Completed sprints**: phase2-sprint1.md, phase2-sprint2.md, phase2-sprint3.md, phase3 (3 sprints), neural-bridge-v2 (3 sprints)
-> **Next**: Phase 4 — see docs/ROADMAP.md
-> **Previous phases**: Phase 1 (Minimal Language) — COMPLETE, Phase 2 (Core Language) — COMPLETE
+> **Current phase**: Phase 4 (Production Readiness) — COMPLETE (all 4 sprints)
+> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (4 sprints)
+> **Next**: Phase 5 — see docs/ROADMAP.md
+> **Previous phases**: Phase 1 — COMPLETE, Phase 2 — COMPLETE, Phase 3 — COMPLETE
 
 ---
 
@@ -24,13 +24,13 @@
 - [x] `pyproject.toml` with maturin build (Rust 1.94.0 + PyO3 0.25)
 - [x] `.gitignore`, `LICENSE` (MIT)
 - [x] Python package skeleton (`src/sigil/` with all subpackages)
-- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl` all working
+- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse` all working
 - [x] `maturin develop` — builds Rust core + installs Python package
 - [x] Virtual environment at `.venv` (Python 3.14.3)
 - [x] Rust crate (`src/sigil_core/`) — ReteNetwork, ConstraintSolver, trace serialization
 - [x] Linting passes — `ruff check src/ tests/` clean
 - [x] mypy passes — `mypy src/sigil/` clean (0 errors, 25 files)
-- [ ] CI pipeline — NOT YET CREATED
+- [x] CI pipeline — `.github/workflows/ci.yml` (Python 3.11-3.13, lint, test)
 
 ### Example Programs (20 Complete)
 **Phase 1 examples** (acceptance criteria — all 5 lex, parse, and execute):
@@ -63,6 +63,12 @@
 19. `examples/interop/python_math.sigil` — Python FFI (math + json imports)
 20. `examples/interop/rust_speedup.sigil` — Rust core rule matching
 21. `examples/neuro_symbolic/sentiment_analysis.sigil` — Neural bridge with HF model
+
+**Phase 4 examples** (4 new):
+22. `examples/getting_started/hello.sigil` — Minimal first program
+23. `examples/getting_started/calculator.sigil` — Compute functions
+24. `examples/patterns/priority_rules.sigil` — Conflict resolution
+25. `examples/patterns/backward_chaining.sigil` — Query-driven evaluation
 
 ### Lexer (Complete — Phase 1)
 - `src/sigil/errors.py` — Error hierarchy + SourceLocation
@@ -184,12 +190,41 @@
   - Check #10: Gradual type inference from given literals (Phase 2 Sprint 3)
   - Check #11: Unit awareness — warn on unit suffix mismatches (Phase 2 Sprint 3)
 
-### REPL (Complete — Phase 1)
-- `src/sigil/interpreter/repl.py` — Interactive REPL (~200 lines)
+### REPL (Enhanced — Phase 4)
+- `src/sigil/interpreter/repl.py` — Interactive REPL (~320 lines)
 - Special commands: `:env`, `:rules`, `:funcs`, `:types`, `:trace`, `:reset`, `:help`
+- Readline history persistence to `~/.sigil_history`
+- Tab completion: keywords, commands, stdlib modules, bound variables
+
+### Error Experience (Complete — Phase 4 Sprint 1)
+- `src/sigil/errors.py` — All errors support `suggestion` field rendered as `hint:`
+- `SigilParseErrors` — Multi-error collection from panic-mode parser recovery
+- `SigilRuntimeError` — Call stack tracking with source-mapped tracebacks
+- Parser: panic-mode synchronization, recovers at declaration boundaries
+- Evaluator: "did you mean?" via Levenshtein distance for undefined functions
+- Type checker: unused compute/constant declaration warnings
+
+### Formatter (Complete — Phase 4 Sprint 2)
+- `src/sigil/formatter/formatter.py` — AST→source round-trip formatter (~380 lines)
+- `sigil fmt file.sigil` — print formatted source
+- `sigil fmt file.sigil --check` — exit 1 if needs formatting
+- Handles all AST node types, consistent 2-space indentation
+
+### Linter (Complete — Phase 4 Sprint 2)
+- `src/sigil/linter/linter.py` — Semantic linter extending type checker
+- Checks: empty rule body, duplicate conditions, confidence_threshold range
+- `sigil lint file.sigil` / `sigil lint file.sigil --strict`
+
+### NL-to-Sigil Generator (Complete — Phase 4 Sprint 3)
+- `src/sigil/generator/` — LLM-powered code generation
+- `SigilGenerator` with pluggable `LLMBackend` protocol
+- `AnthropicLLM` default backend (requires `anthropic` SDK)
+- Validation pipeline: parse → type-check → report
+- Interactive refinement loop (auto-retry with error feedback)
+- `sigil parse "description"` / `sigil parse "description" --interactive`
 
 ### Test Suite
-- **807 tests total**, all passing (excluding 7 pre-existing torchvision env failures):
+- **942 tests total**, all passing:
   - 91 lexer tests
   - 75 parser tests (+ 12 pipeline parsing tests)
   - 137 interpreter tests (Phase 1)
@@ -235,6 +270,19 @@
   - 13 Rust pattern matcher tests
   - 12 Rust constraint solver tests
   - 5 Rust trace serialization tests
+  - **Phase 4 (135 new tests):**
+  - 10 error message tests
+  - 10 error recovery tests
+  - 7 stack trace tests
+  - 6 warning tests
+  - 17 formatter tests
+  - 11 linter tests
+  - 10 generator tests
+  - 6 validator tests
+  - 5 prompt assembly tests
+  - 4 interactive refinement tests
+  - 10 import/packaging tests
+  - 29 example parse tests (parametrized across all .sigil files)
 
 ---
 
@@ -314,7 +362,39 @@
 - [x] Benchmarks (pattern matching ~2.4x, trace ~1.3x speedup)
 - [x] 30 new tests + 1 example + benchmark → 764 total
 
-### Phase 4+: See `docs/ROADMAP.md`
+## Phase 4 Plan (4 Sprints) — COMPLETE
+
+### Sprint 1: Error Experience — COMPLETE
+- [x] Error suggestion infrastructure (`suggestion` field on all errors)
+- [x] Parser panic-mode recovery (`SigilParseErrors`, `_synchronize()`)
+- [x] Lexer error suggestions (tabs, unterminated strings)
+- [x] Evaluator call stack tracking + "did you mean?" (Levenshtein)
+- [x] Unused declaration warnings in type checker
+- [x] `--warnings-as-errors` flag on `sigil check`
+- [x] 33 new tests → 823 total
+
+### Sprint 2: Developer Tooling — COMPLETE
+- [x] AST→source formatter (`sigil fmt`)
+- [x] Semantic linter (`sigil lint`)
+- [x] REPL readline history + tab completion
+- [x] 28 new tests → 851 total
+
+### Sprint 3: NL-to-Sigil Generator — COMPLETE
+- [x] `SigilGenerator` with pluggable `LLMBackend` protocol
+- [x] Prompt engineering (syntax reference + examples + constraints)
+- [x] Validation pipeline (parse → type-check)
+- [x] Interactive refinement loop (auto-retry)
+- [x] CLI: `sigil parse "description"` with `--interactive`
+- [x] 25 new tests → 876 total
+
+### Sprint 4: Packaging & CI — COMPLETE
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`)
+- [x] 4 new example programs (getting_started + patterns)
+- [x] `CONTRIBUTING.md`
+- [x] Packaging tests (imports + example parse validation)
+- [x] 39 new tests → 942 total (29 parametrized example tests)
+
+### Phase 5+: See `docs/ROADMAP.md`
 
 ---
 
@@ -323,7 +403,7 @@
 1. ~~Rust not installed~~: **Resolved** — Rust 1.94.0 installed, maturin build working with PyO3 0.25
 2. ~~Grammar doc needs updating~~: **Resolved** — GRAMMAR.peg v0.2 reflects all 8 parser gaps
 3. ~~Pipeline parsing~~: **Resolved** — Full pipeline operator implemented in Phase 2 Sprint 1
-4. **CI pipeline**: Not yet set up (GitHub Actions)
+4. ~~CI pipeline~~: **Resolved** — `.github/workflows/ci.yml` with Python 3.11-3.13 matrix
 5. ~~mypy~~: **Resolved** — 0 errors across 25 source files
 6. ~~Neural stubs~~: **Resolved** — Phase 3 replaced stubs with pluggable ModelBackend + ModelRegistry
 7. **Rust core marshaling overhead**: At small scale (5 constraints), Python-to-Rust marshaling dominates computation. Speedup visible at 50+ rules. Full Rete with persistent Rust-side data (Phase 5) will eliminate this.

@@ -81,6 +81,12 @@ class TypeChecker:
         self._settable_names: set[str] = set()
         self._field_access_bases: set[str] = set()
         self._const_units: dict[str, str] = {}  # name → unit suffix from define
+        # Track referenced names for unused-declaration warnings
+        self._referenced_names: set[str] = set()
+        # Track declaration kinds for targeted warnings
+        self._compute_names: dict[str, SourceLocation] = {}
+        self._rule_names: dict[str, SourceLocation] = {}
+        self._const_names: dict[str, SourceLocation] = {}
 
     def check(self, program: ast.Program) -> CheckResult:
         """Type-check a program and return diagnostics."""
@@ -116,11 +122,16 @@ class TypeChecker:
             elif isinstance(decl.body, ast.EnumBody):
                 for variant in decl.body.variants:
                     self._register_name(variant.name, variant.location)
-        elif isinstance(decl, (ast.ConstDecl, ast.RuleDecl)):
+        elif isinstance(decl, ast.ConstDecl):
             self._register_name(decl.name, decl.location)
+            self._const_names[decl.name] = decl.location
+        elif isinstance(decl, ast.RuleDecl):
+            self._register_name(decl.name, decl.location)
+            self._rule_names[decl.name] = decl.location
         elif isinstance(decl, ast.ComputeDecl):
             self._register_name(decl.name, decl.location)
             self._compute_arity[decl.name] = len(decl.params)
+            self._compute_names[decl.name] = decl.location
             if decl.return_type and isinstance(decl.return_type, ast.NamedType):
                 self._compute_return_types[decl.name] = decl.return_type.name
         elif isinstance(decl, ast.NeuralDecl):
@@ -138,7 +149,7 @@ class TypeChecker:
             self._declared_names[name] = location
 
     def _collect_from_ast(self, node: object) -> None:
-        """Walk entire AST collecting settable names, field-access bases, and units."""
+        """Walk entire AST collecting settable names, field-access bases, units, and refs."""
         if (
             isinstance(node, ast.ConstDecl)
             and isinstance(node.value, ast.Literal)
@@ -158,6 +169,14 @@ class TypeChecker:
             base = self._get_fa_base(node)
             if base:
                 self._field_access_bases.add(base)
+
+        # Track identifier references (for unused-declaration detection)
+        if isinstance(node, ast.Identifier):
+            self._referenced_names.add(node.name)
+        elif isinstance(node, ast.FuncCall) and isinstance(
+            node.function, ast.Identifier,
+        ):
+            self._referenced_names.add(node.function.name)
 
         # Recurse into dataclass fields
         if hasattr(node, "__dataclass_fields__"):
@@ -192,6 +211,8 @@ class TypeChecker:
                 self._check_compute(decl, base_scope)
             elif isinstance(decl, ast.MainDecl):
                 self._check_main(decl, base_scope)
+
+        self._check_unused_declarations()
 
     def _build_base_scope(self) -> set[str]:
         scope = set(_BUILTIN_NAMES)
@@ -601,6 +622,29 @@ class TypeChecker:
         if func_name in _BUILTIN_ARITIES:
             return _BUILTIN_ARITIES[func_name]
         return None
+
+    # --- Unused declaration warnings ---
+
+    def _check_unused_declarations(self) -> None:
+        """Warn about declared names that are never referenced."""
+        for name, loc in self._compute_names.items():
+            if name not in self._referenced_names:
+                self._warning(
+                    loc,
+                    f"Unused compute function: '{name}' is declared"
+                    " but never called",
+                    suggestion=f"remove '{name}' or call it from a rule"
+                    " or main block",
+                )
+        for name, loc in self._const_names.items():
+            if name not in self._referenced_names:
+                self._warning(
+                    loc,
+                    f"Unused constant: '{name}' is defined but never"
+                    " referenced",
+                    suggestion=f"remove the definition of '{name}' if"
+                    " it is no longer needed",
+                )
 
 
 # ------------------------------------------------------------------

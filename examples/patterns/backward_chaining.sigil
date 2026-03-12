@@ -1,0 +1,20 @@
+-- Backward Chaining: Goal-driven evaluation
+-- Uses query to work backward from a goal.
+
+define age as 25
+define has_license as true
+define has_insurance as true
+
+rule can_drive:
+  when age exceeds 16
+  and has_license is true
+  then eligible is true
+
+rule fully_covered:
+  when eligible is true
+  and has_insurance is true
+  then covered is true
+
+main:
+  query covered
+  print("Covered: {covered}")

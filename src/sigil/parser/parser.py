@@ -7,8 +7,30 @@ clarity, and debuggability.
 from __future__ import annotations
 
 from sigil.ast import nodes as ast
-from sigil.errors import SigilParseError, SourceLocation
+from sigil.errors import SigilParseError, SigilParseErrors, SourceLocation
 from sigil.lexer.tokens import Token, TokenType
+
+# Token types that start a top-level declaration (used for error recovery)
+_DECLARATION_STARTS = frozenset({
+    TokenType.RULE, TokenType.COMPUTE, TokenType.NEURAL, TokenType.TYPE,
+    TokenType.DEFINE, TokenType.IMPORT, TokenType.FROM, TokenType.EXPORT,
+    TokenType.MAIN, TokenType.MODULE,
+})
+
+
+def _expect_suggestion(expected: TokenType, got: Token) -> str | None:
+    """Generate a hint for common _expect failures."""
+    if expected == TokenType.COLON and got.type == TokenType.NEWLINE:
+        return "add ':' after the declaration header"
+    if expected == TokenType.INDENT:
+        return "add 2 spaces of indentation for the block body"
+    if expected == TokenType.IDENTIFIER and got.type in (
+        TokenType.LIST, TokenType.TYPE, TokenType.MATCH,
+    ):
+        return f"'{got.value}' is a reserved keyword; use a different name"
+    if expected == TokenType.NEWLINE and got.type == TokenType.INDENT:
+        return "unexpected indentation here"
+    return None
 
 
 def parse(tokens: list[Token], filename: str = "<stdin>") -> ast.Program:
@@ -50,8 +72,11 @@ class Parser:
     def _expect(self, token_type: TokenType) -> Token:
         if self._peek() != token_type:
             tok = self._current()
+            hint = _expect_suggestion(token_type, tok)
             raise self._error(
-                f"Expected {token_type.name}, got {tok.type.name} ({tok.value!r})"
+                f"Expected {token_type.name},"
+                f" got {tok.type.name} ({tok.value!r})",
+                suggestion=hint,
             )
         return self._advance()
 
@@ -67,8 +92,10 @@ class Parser:
         tok = self._current()
         return SourceLocation(self.filename, tok.line, tok.column)
 
-    def _error(self, message: str) -> SigilParseError:
-        return SigilParseError(message, self._loc())
+    def _error(
+        self, message: str, suggestion: str | None = None,
+    ) -> SigilParseError:
+        return SigilParseError(message, self._loc(), suggestion)
 
     # --- Skip newlines ---
 
@@ -81,6 +108,7 @@ class Parser:
     def parse_program(self) -> ast.Program:
         loc = self._loc()
         self._skip_newlines()
+        errors: list[SigilParseError] = []
 
         module = None
         if self._check(TokenType.MODULE):
@@ -94,31 +122,44 @@ class Parser:
             if self._at_end():
                 break
 
-            match self._peek():
-                case TokenType.IMPORT:
-                    imports.append(self._parse_import_decl())
-                case TokenType.FROM:
-                    imports.append(self._parse_from_import())
-                case TokenType.TYPE:
-                    declarations.append(self._parse_type_decl())
-                case TokenType.DEFINE:
-                    declarations.append(self._parse_const_decl())
-                case TokenType.RULE:
-                    declarations.append(self._parse_rule_decl())
-                case TokenType.COMPUTE:
-                    declarations.append(self._parse_compute_decl())
-                case TokenType.NEURAL:
-                    declarations.append(self._parse_neural_decl())
-                case TokenType.MAIN:
-                    declarations.append(self._parse_main_decl())
-                case TokenType.EXPORT:
-                    declarations.append(self._parse_export_decl())
-                case TokenType.DOC_COMMENT:
-                    self._advance()  # skip doc comments for now
-                case _:
-                    raise self._error(
-                        f"Unexpected token at top level: {self._current().type.name}"
-                    )
+            try:
+                match self._peek():
+                    case TokenType.IMPORT:
+                        imports.append(self._parse_import_decl())
+                    case TokenType.FROM:
+                        imports.append(self._parse_from_import())
+                    case TokenType.TYPE:
+                        declarations.append(self._parse_type_decl())
+                    case TokenType.DEFINE:
+                        declarations.append(self._parse_const_decl())
+                    case TokenType.RULE:
+                        declarations.append(self._parse_rule_decl())
+                    case TokenType.COMPUTE:
+                        declarations.append(self._parse_compute_decl())
+                    case TokenType.NEURAL:
+                        declarations.append(self._parse_neural_decl())
+                    case TokenType.MAIN:
+                        declarations.append(self._parse_main_decl())
+                    case TokenType.EXPORT:
+                        declarations.append(self._parse_export_decl())
+                    case TokenType.DOC_COMMENT:
+                        self._advance()  # skip doc comments for now
+                    case _:
+                        raise self._error(
+                            f"Unexpected token at top level:"
+                            f" {self._current().type.name}",
+                            suggestion=(
+                                "declarations must start with 'rule',"
+                                " 'compute', 'neural', 'type', 'define',"
+                                " 'import', 'export', or 'main'"
+                            ),
+                        )
+            except SigilParseError as e:
+                errors.append(e)
+                self._synchronize()
+
+        if errors:
+            raise SigilParseErrors(errors)
 
         return ast.Program(
             location=loc,
@@ -126,6 +167,21 @@ class Parser:
             imports=tuple(imports),
             declarations=tuple(declarations),
         )
+
+    def _synchronize(self) -> None:
+        """Skip tokens until the next top-level declaration keyword or EOF."""
+        while not self._at_end():
+            # If we hit a newline followed by a declaration keyword, stop
+            if self._peek() in _DECLARATION_STARTS:
+                return
+            # Skip DEDENT tokens that might be closing a block
+            if self._peek() == TokenType.DEDENT:
+                self._advance()
+                continue
+            if self._peek() == TokenType.NEWLINE:
+                self._advance()
+                continue
+            self._advance()
 
     # --- Module declaration ---
 

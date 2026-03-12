@@ -85,9 +85,11 @@ class _Lexer:
     def _emit(self, token_type: TokenType, value: str, line: int, column: int) -> None:
         self.tokens.append(Token(token_type, value, line, column))
 
-    def _error(self, message: str) -> SigilLexError:
+    def _error(
+        self, message: str, suggestion: str | None = None,
+    ) -> SigilLexError:
         loc = SourceLocation(self.filename, self.line, self.column)
-        return SigilLexError(message, loc)
+        return SigilLexError(message, loc, suggestion)
 
     # --- Line start / indentation ---
 
@@ -115,7 +117,10 @@ class _Lexer:
 
             # Reject tabs
             if not self._at_end() and self._peek() == "\t":
-                raise self._error("Tabs are not allowed in Sigil. Use spaces for indentation.")
+                raise self._error(
+                    "Tabs are not allowed in Sigil",
+                    suggestion="use spaces (2 per level) instead of tabs",
+                )
 
             # Check if rest of line is blank or comment-only
             if self._at_end() or self._peek() == "\n" or self._peek() == "\r":
@@ -144,8 +149,9 @@ class _Lexer:
                     self._emit(TokenType.DEDENT, "", self.line, 1)
                 if self.indent_stack[-1] != indent:
                     raise self._error(
-                        f"Inconsistent indentation: got {indent} spaces, "
-                        f"but expected {self.indent_stack[-1]} spaces"
+                        f"Inconsistent indentation: got {indent} spaces,"
+                        f" but expected {self.indent_stack[-1]} spaces",
+                        suggestion="use consistent 2-space indentation",
                     )
             break
 
@@ -264,14 +270,20 @@ class _Lexer:
         chars: list[str] = []
         while not self._at_end() and self._peek() != '"':
             if self._peek() == "\n" or self._peek() == "\r":
-                raise self._error("Unterminated string literal")
+                raise self._error(
+                    "Unterminated string literal",
+                    suggestion='add closing \'"\' to the string',
+                )
             if self._peek() == "\\":
                 chars.append(self._scan_escape())
             else:
                 chars.append(self._advance())
 
         if self._at_end():
-            raise self._error("Unterminated string literal")
+            raise self._error(
+                    "Unterminated string literal",
+                    suggestion='add closing \'"\' to the string',
+                )
 
         self._advance()  # skip closing "
         self._emit(TokenType.STRING, "".join(chars), line, col)
@@ -463,11 +475,17 @@ class _Lexer:
                 if self._match("="):
                     self._emit(TokenType.NEQ, "!=", line, col)
                 else:
-                    raise self._error("Unexpected character: '!'")
+                    raise self._error(
+                        "Unexpected character: '!'",
+                        suggestion="use '!=' for not-equal",
+                    )
             case "|":
                 if self._match(">"):
                     self._emit(TokenType.PIPE, "|>", line, col)
                 else:
-                    raise self._error("Unexpected character: '|' (did you mean '|>'?)")
+                    raise self._error(
+                        "Unexpected character: '|'",
+                        suggestion="use '|>' for the pipeline operator",
+                    )
             case _:
                 raise self._error(f"Unexpected character: {ch!r}")

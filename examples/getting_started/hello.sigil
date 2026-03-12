@@ -1,0 +1,15 @@
+-- Hello Sigil: Your first program
+-- This demonstrates constants, rules, and the main block.
+
+define GREETING as "Hello, Sigil!"
+define THRESHOLD as 100
+
+rule high_value:
+  when x exceeds THRESHOLD
+  then trigger alert with severity :warning
+  explain "Value exceeded threshold"
+
+main:
+  given x as 150
+  print(GREETING)
+  print("Done!")

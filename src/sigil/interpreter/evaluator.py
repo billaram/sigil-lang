@@ -29,6 +29,32 @@ from sigil.interpreter.values import (
 )
 
 
+def _closest_match(name: str, candidates: set[str], max_dist: int = 2) -> str | None:
+    """Find the closest match to name among candidates (Levenshtein distance)."""
+    best, best_dist = None, max_dist + 1
+    for candidate in candidates:
+        dist = _levenshtein(name.lower(), candidate.lower())
+        if dist < best_dist:
+            best, best_dist = candidate, dist
+    return best
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Simple Levenshtein distance."""
+    if len(a) < len(b):
+        return _levenshtein(b, a)
+    if len(b) == 0:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            cost = 0 if ca == cb else 1
+            curr.append(min(curr[j] + 1, prev[j + 1] + 1, prev[j] + cost))
+        prev = curr
+    return prev[len(b)]
+
+
 class ReturnSignal(Exception):  # noqa: N818 — not an error, it's a control flow signal
     """Signal a return statement — unwind the call stack."""
 
@@ -49,6 +75,7 @@ class Evaluator:
         self._module_env: Environment = Environment()
         self.module_loader: object | None = None  # ModuleLoader, set externally
         self.filename: str = "<stdin>"
+        self._call_stack: list[str] = []
 
     def eval_program_repl(
         self,
@@ -291,6 +318,19 @@ class Evaluator:
         self, rule: ast.RuleDecl, env: Environment,
     ) -> tuple[bool, Value, Environment]:
         """Evaluate a single rule. Returns (fired, action_result, updated_env)."""
+        loc = f"{rule.location}" if rule.location else rule.name
+        self._call_stack.append(f"rule {rule.name} ({loc})")
+        try:
+            return self._eval_single_rule_inner(rule, env)
+        except SigilRuntimeError:
+            raise
+        finally:
+            self._call_stack.pop()
+
+    def _eval_single_rule_inner(
+        self, rule: ast.RuleDecl, env: Environment,
+    ) -> tuple[bool, Value, Environment]:
+        """Inner rule evaluation logic."""
         with TraceTimer() as timer:
             rule_trace = RuleTrace(
                 rule_name=rule.name,
@@ -967,8 +1007,11 @@ class Evaluator:
         if callable(func_val):
             return func_val(args, self.trace)
 
+        candidates = set(self._compute_funcs) | set(self._neural_funcs)
+        hint = _closest_match(func_name, candidates)
+        suggestion = f"did you mean '{hint}'?" if hint else None
         msg = f"Undefined function: {func_name}"
-        raise SigilRuntimeError(msg)
+        raise SigilRuntimeError(msg, suggestion=suggestion)
 
     def _resolve_func_name(self, expr: ast.Expression, env: Environment) -> str:
         """Resolve a function expression to its name."""
@@ -997,13 +1040,22 @@ class Evaluator:
         # Create a new scope with the bindings
         func_env = env.extend(bindings)
 
+        # Track call stack for error reporting
+        loc = f"{decl.location}" if decl.location else name
+        self._call_stack.append(f"compute {name} ({loc})")
+
         # Execute body
         try:
             for stmt in decl.body:
                 _, func_env = self._eval_statement(stmt, [], func_env)
         except ReturnSignal as ret:
+            self._call_stack.pop()
             return ret.value
+        except SigilRuntimeError:
+            self._call_stack.pop()
+            raise
 
+        self._call_stack.pop()
         return None
 
     def _build_neural_config(self, decl: ast.NeuralDecl) -> tuple:

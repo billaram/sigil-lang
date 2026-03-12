@@ -207,12 +207,85 @@ def needs_continuation(text: str) -> bool:
     return open_count > close_count
 
 
+def _setup_readline(session: ReplSession) -> None:
+    """Set up readline for history and tab completion if available."""
+    try:
+        import readline  # noqa: F811
+    except ImportError:
+        return
+
+    import contextlib
+    from pathlib import Path
+
+    # History file
+    history_file = Path.home() / ".sigil_history"
+    with contextlib.suppress(FileNotFoundError):
+        readline.read_history_file(str(history_file))
+    readline.set_history_length(1000)
+
+    import atexit
+    atexit.register(readline.write_history_file, str(history_file))
+
+    # Tab completion
+    completer = _SigilCompleter(session)
+    readline.set_completer(completer.complete)
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer_delims(" \t\n()[]{}:,")
+
+
+class _SigilCompleter:
+    """Tab completer for the Sigil REPL."""
+
+    _KEYWORDS = [
+        "rule", "when", "then", "and", "or", "not", "if", "else",
+        "given", "define", "as", "is", "exceeds", "below", "between",
+        "any", "all", "none", "in", "import", "export", "module",
+        "type", "neural", "explain", "with", "true", "false", "using",
+        "from", "compute", "return", "trace", "match", "for", "each",
+        "evaluate", "main", "query",
+    ]
+
+    _COMMANDS = [":env", ":rules", ":funcs", ":types", ":trace", ":reset", ":help"]
+
+    _STDLIB = [
+        "sigil.math", "sigil.text", "sigil.list", "sigil.logic",
+        "sigil.time", "sigil.trace", "sigil.io",
+    ]
+
+    def __init__(self, session: ReplSession) -> None:
+        self._session = session
+        self._matches: list[str] = []
+
+    def complete(self, text: str, state: int) -> str | None:
+        if state == 0:
+            self._matches = self._find_matches(text)
+        if state < len(self._matches):
+            return self._matches[state]
+        return None
+
+    def _find_matches(self, text: str) -> list[str]:
+        candidates: list[str] = []
+        candidates.extend(self._KEYWORDS)
+        candidates.extend(self._COMMANDS)
+        candidates.extend(self._STDLIB)
+
+        # Add bound variables from environment
+        for name, _ in self._session.env.all_bindings():
+            candidates.append(name)
+
+        # Add compute function names
+        candidates.extend(self._session.compute_funcs)
+
+        return sorted({c for c in candidates if c.startswith(text)})
+
+
 def run_repl() -> None:
     """Run the interactive REPL loop."""
     print("Sigil REPL v0.1.0")
     print("Type :help for commands, 'exit' to quit.\n")
 
     session = ReplSession()
+    _setup_readline(session)
     buffer: list[str] = []
 
     while True:
