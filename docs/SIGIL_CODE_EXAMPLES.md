@@ -496,6 +496,234 @@ compute calculate_rate from score: Number returns Number:
 
 ---
 
+## Using `sigil code` — Interactive Agent Workflows
+
+### Starting a Session
+
+```bash
+# Start in the current directory
+sigil code
+
+# Start in a specific project directory
+sigil code --working-dir ./my-project
+
+# Use a different model
+sigil code --model claude-sonnet-4-20250514
+```
+
+```
+Sigil Code v0.1.0 — AI assistant for the Sigil language
+Type 'exit' to quit, ':help' for commands.
+
+sigil-code> _
+```
+
+### Local Commands (handled without LLM)
+
+| Command    | Description                        |
+|------------|------------------------------------|
+| `:help`    | Show available commands             |
+| `:files`   | List .sigil files in working dir   |
+| `:reset`   | Clear conversation history         |
+| `:history` | Show conversation turn count       |
+| `:pwd`     | Show working directory             |
+| `exit`     | Quit the session                   |
+
+---
+
+### Workflow 1: Create a New Project from Template
+
+**Prompt:**
+```
+sigil-code> Scaffold a rules project called fraud-detection
+```
+
+**What happens:**
+1. Agent calls the `scaffold` tool with template `rules` and name `fraud-detection`
+2. Creates `fraud-detection/` directory with `types.sigil` and `rules.sigil`
+3. Agent explains the project structure
+
+**Expected response:**
+```
+I've scaffolded a new "rules" project in fraud-detection/. Here's what was created:
+
+  fraud-detection/
+    types.sigil   — Type definitions (Priority enum)
+    rules.sigil   — Decision rules with priorities
+
+You can run it with:
+  sigil run fraud-detection/rules.sigil --input '{"severity": 95, "status": ":active"}'
+```
+
+Available templates: `basic`, `rules`, `neural`, `full`
+
+```
+sigil-code> Scaffold a full project called insurance-claims
+```
+
+Creates: `main.sigil`, `types.sigil`, `rules.sigil`, `compute.sigil`, `input.json`
+
+---
+
+### Workflow 2: Generate a New Sigil File from Description
+
+**Prompt:**
+```
+sigil-code> Create a fraud detection rule system that checks transaction amount,
+            frequency, and location risk. Flag transactions over 10000 as high risk,
+            and anything from a flagged country as requiring review.
+```
+
+**What happens:**
+1. Agent generates Sigil code from your description
+2. Agent calls `validate` tool to check it compiles
+3. If errors → agent reads them, fixes the code, validates again (automatic)
+4. Once valid → agent calls `write_file` to save it
+5. Agent explains what was created
+
+**Expected response:**
+```
+I've created fraud_rules.sigil with 3 rules:
+
+  - high_amount (priority 10): flags transactions over 10000
+  - flagged_country (priority 8): flags transactions from risky locations
+  - low_risk (priority 1): marks remaining transactions as safe
+
+The code has been validated — no parse or type errors.
+
+To run it:
+  sigil run fraud_rules.sigil --input '{"amount": 15000, "country": ":flagged", "frequency": 5}'
+```
+
+---
+
+### Workflow 3: Fix Errors in an Existing File
+
+If you have a broken `.sigil` file, ask the agent to read and fix it:
+
+**Prompt:**
+```
+sigil-code> Read rules.sigil and fix any errors
+```
+
+**What happens:**
+1. Agent calls `read_file` to see the current contents
+2. Agent calls `validate` to find errors
+3. Agent fixes the issues (wrong operators, bad indentation, invalid units, etc.)
+4. Agent calls `validate` again to confirm the fix
+5. Agent calls `write_file` to save the corrected version
+
+**Common errors the agent auto-corrects:**
+
+| Error | Agent Fix |
+|-------|-----------|
+| `when x > 100` in a rule | → `when x exceeds 100` |
+| `x ** 2` | → `pow(x, 2)` (adds `import sigil.math`) |
+| 4-space indent | → 2-space indent |
+| `30 days` (invalid unit) | → `30` (removes unit) |
+| `type Status is enum:` | → `type Status is one of:` |
+| `:variant` in enum body | → `variant` (no colon) |
+| `return` in main block | → `given result as ...` + `print(result)` |
+
+---
+
+### Workflow 4: Update an Existing File
+
+**Prompt:**
+```
+sigil-code> Add a medium_risk rule to fraud_rules.sigil that triggers when
+            amount is between 5000 and 10000 with priority 5
+```
+
+**What happens:**
+1. Agent calls `read_file` to get current contents
+2. Agent adds the new rule to the existing code
+3. Agent calls `validate` to check everything still works
+4. Agent calls `write_file` to save the updated version
+5. Agent shows what changed
+
+---
+
+### Workflow 5: Run and Test Code
+
+**Prompt:**
+```
+sigil-code> Run fraud_rules.sigil with amount 15000 and country :flagged
+```
+
+**What happens:**
+1. Agent calls `execute` with the code and input data
+2. Shows output and explains what rules fired
+
+**Prompt:**
+```
+sigil-code> Run it again with amount 500 and country :safe
+```
+
+The agent remembers context from the conversation and re-runs with new inputs.
+
+---
+
+### Workflow 6: Iterative Development
+
+A typical multi-turn session:
+
+```
+sigil-code> Create a credit scoring system with risk levels
+
+  [Agent generates, validates, writes credit_score.sigil]
+
+sigil-code> Add a compute function that calculates a weighted score
+            from credit_history, income, and debt_ratio
+
+  [Agent reads the file, adds compute function, validates, writes]
+
+sigil-code> The threshold for high risk should be 300 not 500, update it
+
+  [Agent reads, updates the constant, validates, writes]
+
+sigil-code> Run it with credit_history 720, income 85000, debt_ratio 0.3
+
+  [Agent executes, shows output]
+
+sigil-code> Add a neural classifier that predicts default probability
+            using the openai backend with 0.9 confidence threshold
+
+  [Agent adds neural declaration, validates, writes]
+
+sigil-code> :files
+  credit_score.sigil (480 bytes)
+
+sigil-code> exit
+```
+
+---
+
+### Workflow 7: Explain Existing Code
+
+**Prompt:**
+```
+sigil-code> Read temperature.sigil and explain what it does
+```
+
+The agent reads the file and provides a natural language explanation of the types, rules, priorities, and how they interact.
+
+---
+
+### Workflow 8: Format Code
+
+**Prompt:**
+```
+sigil-code> Format rules.sigil to fix the indentation
+```
+
+**What happens:**
+1. Agent calls `read_file` to get the source
+2. Agent calls `format_code` which round-trips through the AST formatter
+3. Agent calls `write_file` with the formatted output
+
+---
+
 ## Quick Reference — Common Patterns
 
 | Pattern | Syntax |
@@ -523,18 +751,25 @@ compute calculate_rate from score: Number returns Number:
 
 ---
 
-## Running Examples
+## CLI Commands
 
 ```bash
+# Interactive AI agent (create, fix, run Sigil programs via conversation)
+sigil code
+sigil code --working-dir ./my-project
+sigil code --model claude-sonnet-4-20250514
+
 # Execute a program
 sigil run file.sigil
-
-# Execute with input data
 sigil run file.sigil --input '{"temperature": 150}'
-
-# Execute with trace output
 sigil run file.sigil --trace
 
-# Interactive agent session
-sigil code
+# Other tools
+sigil check file.sigil          # Type-check
+sigil fmt file.sigil             # Format
+sigil lint file.sigil            # Lint
+sigil lex file.sigil             # Dump tokens
+sigil parse-ast file.sigil       # Dump AST
+sigil repl                       # Interactive REPL
+sigil parse "description"        # One-shot NL-to-Sigil generation
 ```
