@@ -108,10 +108,12 @@ rule high_temp with priority 5:
   explain "Temperature exceeded safe threshold"
 
 -- Example 2: Loan eligibility
+import sigil.math
+
 compute monthly_payment from principal: Number, rate: Number, months: Number \
 returns Number:
   given monthly_rate as rate / 12
-  return principal * monthly_rate / (1 - (1 + monthly_rate) ** (0 - months))
+  return principal * monthly_rate / (1 - pow(1 + monthly_rate, 0 - months))
 
 rule approve_loan with priority 10:
   when credit_score exceeds 700

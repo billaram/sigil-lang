@@ -347,6 +347,19 @@ def main() -> None:
         help="Treat warnings as errors",
     )
 
+    # sigil code
+    code_parser = subparsers.add_parser(
+        "code", help="Interactive Sigil Code agent (AI assistant)",
+    )
+    code_parser.add_argument(
+        "--model", default="claude-sonnet-4-20250514",
+        help="Anthropic model to use (default: claude-sonnet-4-20250514)",
+    )
+    code_parser.add_argument(
+        "--working-dir", type=Path, default=None,
+        help="Working directory for file operations (default: cwd)",
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -381,6 +394,14 @@ def main() -> None:
 
     elif args.command == "lint":
         _cmd_lint(args.file, strict=args.strict)
+
+    elif args.command == "code":
+        from sigil.agent.session import run_agent_session
+
+        run_agent_session(
+            working_dir=args.working_dir,
+            model=args.model,
+        )
 
 
 if __name__ == "__main__":
