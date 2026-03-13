@@ -1,8 +1,8 @@
 # Project Status — KEEP THIS UPDATED
 
-> **Last updated**: 2026-03-11
-> **Current phase**: Phase 4 (Production Readiness) — COMPLETE (all 4 sprints)
-> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (4 sprints)
+> **Last updated**: 2026-03-12
+> **Current phase**: Phase 4 (Production Readiness) — COMPLETE (all 5 sprints)
+> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints)
 > **Next**: Phase 5 — see docs/ROADMAP.md
 > **Previous phases**: Phase 1 — COMPLETE, Phase 2 — COMPLETE, Phase 3 — COMPLETE
 
@@ -18,13 +18,14 @@
 - Sprint plans: `PRP/mar-phase1-sprint1.md` (done), `PRP/mar-phase1-sprint2.md` (done)
 - Phase 2 plans: `PRP/phase2-sprint1.md` (done), `PRP/phase2-sprint2.md` (done), `PRP/phase2-sprint3.md`
 - Phase 3 plan: `PRP/phase3-plan.md`
+- `docs/SIGIL_CODE_EXAMPLES.md` — Sigil Code interactive agent usage examples
 
 ### Project Infrastructure (Working)
 - [x] Git repo initialized on `main` branch
 - [x] `pyproject.toml` with maturin build (Rust 1.94.0 + PyO3 0.25)
 - [x] `.gitignore`, `LICENSE` (MIT)
 - [x] Python package skeleton (`src/sigil/` with all subpackages)
-- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse` all working
+- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse`, `sigil code` all working
 - [x] `maturin develop` — builds Rust core + installs Python package
 - [x] Virtual environment at `.venv` (Python 3.14.3)
 - [x] Rust crate (`src/sigil_core/`) — ReteNetwork, ConstraintSolver, trace serialization
@@ -222,9 +223,19 @@
 - Validation pipeline: parse → type-check → report
 - Interactive refinement loop (auto-retry with error feedback)
 - `sigil parse "description"` / `sigil parse "description" --interactive`
+- `docs/SIGIL_CODE_EXAMPLES.md` — usage examples and workflows
+
+### Sigil Code Interactive Agent (Complete — Phase 4 Sprint 5)
+- `src/sigil/agent/session.py` — Session manager (CLI entry point, conversation state)
+- `src/sigil/agent/loop.py` — ReACT loop via Anthropic `tool_use` API (observe→think→act cycle)
+- `src/sigil/agent/tools.py` — 7 tools: `validate`, `execute`, `format_code`, `write_file`, `read_file`, `list_project`, `scaffold`
+- `src/sigil/agent/prompts.py` — System prompt assembly with Sigil syntax reference
+- `src/sigil/agent/templates.py` — 4 project templates: basic, rules, neural, full
+- `sigil code` CLI subcommand — launches interactive agent session
+- 58 tests (22 tool, 12 loop, 14 prompt, 6 template, 4 session/CLI)
 
 ### Test Suite
-- **942 tests total**, all passing:
+- **1000 tests total**, all passing:
   - 91 lexer tests
   - 75 parser tests (+ 12 pipeline parsing tests)
   - 137 interpreter tests (Phase 1)
@@ -283,6 +294,12 @@
   - 4 interactive refinement tests
   - 10 import/packaging tests
   - 29 example parse tests (parametrized across all .sigil files)
+  - **Sigil Code Agent (58 new tests):**
+  - 22 tool tests (validate, execute, format_code, write_file, read_file, list_project, scaffold)
+  - 12 loop tests (mock Anthropic backend, ReACT cycle, tool dispatch)
+  - 14 prompt validation tests (system prompt assembly, syntax reference inclusion)
+  - 6 template tests (basic, rules, neural, full + toolchain validation)
+  - 4 session/CLI tests
 
 ---
 
@@ -362,7 +379,7 @@
 - [x] Benchmarks (pattern matching ~2.4x, trace ~1.3x speedup)
 - [x] 30 new tests + 1 example + benchmark → 764 total
 
-## Phase 4 Plan (4 Sprints) — COMPLETE
+## Phase 4 Plan (5 Sprints) — COMPLETE
 
 ### Sprint 1: Error Experience — COMPLETE
 - [x] Error suggestion infrastructure (`suggestion` field on all errors)
@@ -393,6 +410,14 @@
 - [x] `CONTRIBUTING.md`
 - [x] Packaging tests (imports + example parse validation)
 - [x] 39 new tests → 942 total (29 parametrized example tests)
+
+### Sprint 5: Sigil Code Interactive Agent — COMPLETE
+- [x] ReACT loop via Anthropic `tool_use` API (observe→think→act)
+- [x] 7 tools: validate, execute, format_code, write_file, read_file, list_project, scaffold
+- [x] 4 project templates (basic, rules, neural, full)
+- [x] System prompt with Sigil syntax reference and constraints
+- [x] CLI: `sigil code` launches interactive agent session
+- [x] 58 new tests → 1000 total
 
 ### Phase 5+: See `docs/ROADMAP.md`
 
@@ -432,6 +457,8 @@
 | 2026-03-11 | Neural v2: NeuralConfig dataclass | All neural field params in one frozen dataclass; parser already accepts arbitrary IDENTIFIER fields | Per-field extraction in evaluator |
 | 2026-03-11 | Neural v2: 6 backends | hf:, claude:, openai:, onnx:, python:, mock: — all optional except mock/python | Single backend, manual selection |
 | 2026-03-11 | Neural v2: timeout via threading | Thread-based timeout around backend.predict(); TimeoutError triggers fallback | asyncio (would infect evaluator), signal (not cross-platform) |
+| 2026-03-12 | Generator prompts: `**` → `pow()` | `**` operator not in Sigil grammar; prompt examples in `generator/prompts.py` line 114 replaced with `pow()` stdlib call | Keep `**` (would require lexer/parser changes) |
+| 2026-03-12 | Sigil Code agent: ReACT loop | Tool-use based agent loop using Anthropic API; 7 tools for validate/execute/format/scaffold workflow | Direct code generation (no iteration), CLI wizard (no AI) |
 
 ---
 
