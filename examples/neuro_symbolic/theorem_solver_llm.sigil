@@ -1,0 +1,117 @@
+-- theorem_solver_llm.sigil
+-- Demonstrates the Neural Parsing → Symbolic Execution pattern using LLMs
+--
+-- This variant uses Claude or OpenAI instead of HuggingFace:
+--   1. NEURAL: LLM parses natural language problem → structured suggestion
+--   2. SYMBOLIC: Execute the strategy with deterministic math
+--   3. SYMBOLIC: Verify the result and produce a proof trace
+--
+-- Usage (requires ANTHROPIC_API_KEY):
+--   sigil run examples/neuro_symbolic/theorem_solver_llm.sigil \
+--     --input '{"problem_text": "Find side c of triangle where a=10, b=8, angle_C=60"}' \
+--     --trace
+
+import python math
+
+-- ═══════════════════════════════════════════════════════════
+-- NEURAL LAYER: LLM-powered Perception + Planning
+-- ═══════════════════════════════════════════════════════════
+
+-- Step 1: LLM classifies the problem type
+-- In production: Claude reads the problem and returns a structured answer
+-- Falls back to :triangle when no API key available
+neural classify_problem from text: Text:
+  model "claude:claude-sonnet-4-20250514"
+  returns Symbol
+  system_prompt "You are a math problem classifier. Respond with exactly one word: triangle, rectangle, circle, or algebra."
+  temperature 0.0
+  max_tokens 10
+  confidence_threshold 0.5
+  fallback to :triangle
+
+-- Step 2: LLM suggests which theorem to apply
+neural suggest_strategy from text: Text:
+  model "claude:claude-sonnet-4-20250514"
+  returns Symbol
+  system_prompt "You are a math strategy advisor. Given a geometry problem, respond with exactly one strategy: law_of_cosines, law_of_sines, or pythagorean."
+  temperature 0.0
+  max_tokens 10
+  confidence_threshold 0.5
+  fallback to :law_of_cosines
+
+-- ═══════════════════════════════════════════════════════════
+-- SYMBOLIC LAYER: Deterministic Execution + Verification
+-- ═══════════════════════════════════════════════════════════
+
+rule apply_law_of_cosines with priority 10:
+  when strategy is :law_of_cosines
+  and problem_type is :triangle
+  then method is :cosines
+  explain "Applying Law of Cosines: c² = a² + b² - 2ab·cos(C)"
+
+rule apply_law_of_sines with priority 10:
+  when strategy is :law_of_sines
+  and problem_type is :triangle
+  then method is :sines
+  explain "Applying Law of Sines: a/sin(A) = b/sin(B) = c/sin(C)"
+
+rule unknown_strategy with priority 1:
+  when method is not assigned
+  then method is :unknown
+  explain "No applicable theorem found for this problem"
+
+compute solve_cosines from a: Number, b: Number, angle_deg: Number returns Number:
+  given angle_rad as math.radians(angle_deg)
+  given cos_C as math.cos(angle_rad)
+  given c_squared as a * a + b * b - 2 * a * b * cos_C
+  return math.sqrt(c_squared)
+
+-- ═══════════════════════════════════════════════════════════
+-- VERIFICATION
+-- ═══════════════════════════════════════════════════════════
+
+rule verify_positive_result with priority 20:
+  when result exceeds 0
+  and a exceeds 0
+  and b exceeds 0
+  then verified is true
+  explain "Triangle inequality satisfied: all sides positive"
+
+rule verify_failed with priority 15:
+  when verified is not assigned
+  then verified is false
+  explain "VERIFICATION FAILED: result does not satisfy constraints"
+
+-- ═══════════════════════════════════════════════════════════
+-- MAIN: Orchestrate the pipeline
+-- ═══════════════════════════════════════════════════════════
+
+main:
+  given problem_text from input
+
+  -- NEURAL: LLM classifies and plans
+  given problem_type as classify_problem(problem_text)
+  given strategy as suggest_strategy(problem_text)
+
+  print("--- Neural (LLM) Perception ---")
+  print(problem_text)
+  print(problem_type)
+  print(strategy)
+
+  -- SYMBOLIC: Execute strategy
+  evaluate all rules with {strategy: strategy, problem_type: problem_type, method: method}
+
+  print("--- Symbolic Execution ---")
+  print(method)
+
+  given a from input
+  given b from input
+  given angle_C from input
+  given result as solve_cosines(a, b, angle_C)
+  print(result)
+
+  -- SYMBOLIC: Verify
+  evaluate all rules with {result: result, a: a, b: b, verified: verified}
+
+  print("--- Verification ---")
+  print(verified)

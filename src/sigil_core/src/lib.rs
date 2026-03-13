@@ -1,9 +1,24 @@
 use pyo3::prelude::*;
 
+mod matcher;
+mod solver;
+mod trace;
+mod values;
+
 /// Sigil performance core — Rust extensions via PyO3.
-/// Currently a stub. Will contain performance-critical lexer/parser/interpreter code.
 #[pymodule]
 fn _sigil_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", "0.1.0")?;
+
+    // Pattern matcher
+    m.add_class::<matcher::ReteNetwork>()?;
+
+    // Constraint solver
+    m.add_class::<solver::ConstraintSolver>()?;
+
+    // Trace serialization
+    m.add_function(wrap_pyfunction!(trace::serialize_trace_json, m)?)?;
+    m.add_function(wrap_pyfunction!(trace::serialize_trace_compact, m)?)?;
+
     Ok(())
 }

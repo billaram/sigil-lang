@@ -53,12 +53,67 @@ def _cmd_parse_ast(file: Path) -> None:
     print(dump(program))
 
 
-def _cmd_check(file: Path) -> None:
+def _cmd_check(file: Path, *, warnings_as_errors: bool = False) -> None:
     """Type-check a .sigil file."""
-    from sigil.errors import SigilError
+    from sigil.errors import SigilError, SigilParseErrors
     from sigil.lexer import tokenize
     from sigil.parser import parse
     from sigil.types.checker import Severity, check
+
+    if not file.exists():
+        print(f"[sigil] Error: file not found: {file}", file=sys.stderr)
+        sys.exit(1)
+
+    source = file.read_text()
+    try:
+        tokens = tokenize(source, str(file))
+        program = parse(tokens, str(file))
+    except SigilParseErrors as e:
+        for err in e.errors:
+            print(f"[sigil] Error: {err}", file=sys.stderr)
+        print(
+            f"\n{len(e.errors)} parse error(s) found",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except SigilError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    result = check(program)
+
+    for diag in result.diagnostics:
+        severity = "error" if diag.severity == Severity.ERROR else "warning"
+        print(f"{diag.location}: {severity}: {diag.message}")
+        if diag.suggestion:
+            print(f"  hint: {diag.suggestion}")
+
+    has_failure = result.has_errors
+    if warnings_as_errors and result.warning_count > 0:
+        has_failure = True
+
+    if has_failure:
+        total = result.error_count + (
+            result.warning_count if warnings_as_errors else 0
+        )
+        print(
+            f"\n{result.error_count} error(s),"
+            f" {result.warning_count} warning(s)",
+        )
+        sys.exit(1 if total > 0 else 0)
+    elif result.warning_count > 0:
+        print(f"\n{result.warning_count} warning(s)")
+    else:
+        print(f"[sigil] {file}: no issues found")
+
+
+def _cmd_lint(file: Path, *, strict: bool = False) -> None:
+    """Lint a .sigil file."""
+    from sigil.errors import SigilError
+    from sigil.lexer import tokenize
+    from sigil.linter import lint
+    from sigil.parser import parse
+    from sigil.types.checker import Severity
 
     if not file.exists():
         print(f"[sigil] Error: file not found: {file}", file=sys.stderr)
@@ -72,7 +127,7 @@ def _cmd_check(file: Path) -> None:
         print(f"[sigil] Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    result = check(program)
+    result = lint(program)
 
     for diag in result.diagnostics:
         severity = "error" if diag.severity == Severity.ERROR else "warning"
@@ -80,20 +135,84 @@ def _cmd_check(file: Path) -> None:
         if diag.suggestion:
             print(f"  hint: {diag.suggestion}")
 
-    if result.has_errors:
-        print(f"\n{result.error_count} error(s), {result.warning_count} warning(s)")
+    has_failure = result.has_errors or (strict and result.warning_count > 0)
+    total = result.error_count + result.warning_count
+    if has_failure:
+        print(
+            f"\n{result.error_count} error(s),"
+            f" {result.warning_count} warning(s)",
+        )
         sys.exit(1)
-    elif result.warning_count > 0:
+    elif total > 0:
         print(f"\n{result.warning_count} warning(s)")
     else:
         print(f"[sigil] {file}: no issues found")
+
+
+def _cmd_fmt(file: Path, *, check: bool = False) -> None:
+    """Format a .sigil file."""
+    from sigil.errors import SigilError
+    from sigil.formatter import format_program
+    from sigil.lexer import tokenize
+    from sigil.parser import parse
+
+    if not file.exists():
+        print(f"[sigil] Error: file not found: {file}", file=sys.stderr)
+        sys.exit(1)
+
+    source = file.read_text()
+    try:
+        tokens = tokenize(source, str(file))
+        program = parse(tokens, str(file))
+    except SigilError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    formatted = format_program(program)
+
+    if check:
+        if source.rstrip() != formatted.rstrip():
+            print(f"[sigil] {file}: needs formatting")
+            sys.exit(1)
+        print(f"[sigil] {file}: already formatted")
+    else:
+        print(formatted, end="")
+
+
+def _cmd_generate(text: str, *, interactive: bool = False) -> None:
+    """Generate Sigil code from a natural language description."""
+    try:
+        if interactive:
+            from sigil.generator.interactive import interactive_generate
+
+            result = interactive_generate(text)
+        else:
+            from sigil.generator import SigilGenerator
+
+            generator = SigilGenerator()
+            result = generator.generate(text)
+    except ImportError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"[sigil] Generation error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(result.code, end="")
+
+    if result.valid:
+        print("\n-- [sigil] Generated code is valid.", file=sys.stderr)
+    else:
+        print("\n-- [sigil] Generated code has issues:", file=sys.stderr)
+        for diag in result.diagnostics:
+            print(f"--   {diag}", file=sys.stderr)
 
 
 def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) -> None:
     """Run a .sigil program."""
     import json
 
-    from sigil.errors import SigilError
+    from sigil.errors import SigilError, SigilParseErrors
     from sigil.interpreter.trace import format_trace
     from sigil.lexer import tokenize
     from sigil.parser import parse
@@ -106,6 +225,14 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
     try:
         tokens = tokenize(source, str(file))
         program = parse(tokens, str(file))
+    except SigilParseErrors as e:
+        for err in e.errors:
+            print(f"[sigil] Error: {err}", file=sys.stderr)
+        print(
+            f"\n{len(e.errors)} parse error(s) found",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     except SigilError as e:
         print(f"[sigil] Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -188,17 +315,50 @@ def main() -> None:
     # sigil repl
     subparsers.add_parser("repl", help="Start interactive Sigil REPL")
 
-    # sigil parse
-    parse_parser = subparsers.add_parser("parse", help="Parse natural language to Sigil")
+    # sigil parse (NL-to-Sigil generator)
+    parse_parser = subparsers.add_parser("parse", help="Generate Sigil code from natural language")
     parse_parser.add_argument("text", type=str, help="Natural language description")
+    parse_parser.add_argument(
+        "--interactive", action="store_true",
+        help="Auto-refine generated code if validation fails",
+    )
 
     # sigil check
     check_parser = subparsers.add_parser("check", help="Type-check a Sigil program")
     check_parser.add_argument("file", type=Path, help="Path to .sigil file")
+    check_parser.add_argument(
+        "--warnings-as-errors", action="store_true",
+        help="Treat warnings as errors (exit 1 on warnings)",
+    )
 
     # sigil fmt
     fmt_parser = subparsers.add_parser("fmt", help="Format a Sigil program")
     fmt_parser.add_argument("file", type=Path, help="Path to .sigil file")
+    fmt_parser.add_argument(
+        "--check", action="store_true",
+        help="Check if file is formatted (exit 1 if not)",
+    )
+
+    # sigil lint
+    lint_parser = subparsers.add_parser("lint", help="Lint a Sigil program")
+    lint_parser.add_argument("file", type=Path, help="Path to .sigil file")
+    lint_parser.add_argument(
+        "--strict", action="store_true",
+        help="Treat warnings as errors",
+    )
+
+    # sigil code
+    code_parser = subparsers.add_parser(
+        "code", help="Interactive Sigil Code agent (AI assistant)",
+    )
+    code_parser.add_argument(
+        "--model", default="claude-sonnet-4-20250514",
+        help="Anthropic model to use (default: claude-sonnet-4-20250514)",
+    )
+    code_parser.add_argument(
+        "--working-dir", type=Path, default=None,
+        help="Working directory for file operations (default: cwd)",
+    )
 
     args = parser.parse_args()
 
@@ -221,15 +381,27 @@ def main() -> None:
         run_repl()
 
     elif args.command == "parse":
-        print(f'[sigil] Parsing: "{args.text}"')
-        print("[sigil] NL→Sigil parser not yet implemented. See docs/ROADMAP.md for Phase 4.")
+        _cmd_generate(args.text, interactive=args.interactive)
 
     elif args.command == "check":
-        _cmd_check(args.file)
+        _cmd_check(
+            args.file,
+            warnings_as_errors=args.warnings_as_errors,
+        )
 
     elif args.command == "fmt":
-        print(f"[sigil] Formatting {args.file}...")
-        print("[sigil] Formatter not yet implemented. See docs/ROADMAP.md for Phase 4.")
+        _cmd_fmt(args.file, check=getattr(args, "check", False))
+
+    elif args.command == "lint":
+        _cmd_lint(args.file, strict=args.strict)
+
+    elif args.command == "code":
+        from sigil.agent.session import run_agent_session
+
+        run_agent_session(
+            working_dir=args.working_dir,
+            model=args.model,
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,24 @@
+-- Priority Rules: Conflict resolution
+-- Higher priority rules fire first when multiple match.
+
+define CRITICAL_TEMP as 200
+define WARNING_TEMP as 100
+
+rule critical_alert with priority 10:
+  when temperature exceeds CRITICAL_TEMP
+  then trigger shutdown with severity :critical
+  explain "Temperature critically high — emergency shutdown"
+
+rule warning_alert with priority 5:
+  when temperature exceeds WARNING_TEMP
+  then trigger alert with severity :warning
+  explain "Temperature above warning threshold"
+
+rule normal_status with priority 1:
+  when temperature is below WARNING_TEMP
+  then trigger log with status :normal
+  explain "Temperature within normal range"
+
+main:
+  given temperature as 250
+  print("Temperature: {temperature}")

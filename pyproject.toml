@@ -30,10 +30,14 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-neural = [
+hf = [
     "torch>=2.0",
     "transformers>=4.30",
 ]
+neural = ["sigil-lang[hf]"]
+claude = ["anthropic>=0.40"]
+openai = ["openai>=1.0"]
+onnx = ["onnxruntime>=1.16"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
@@ -41,7 +45,7 @@ dev = [
     "mypy>=1.8",
     "hypothesis>=6.0",
 ]
-all = ["sigil-lang[neural,dev]"]
+all = ["sigil-lang[hf,claude,openai,onnx,dev]"]
 
 [project.scripts]
 sigil = "sigil.cli:main"

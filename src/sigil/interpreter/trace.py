@@ -37,10 +37,25 @@ class RuleTrace:
 
 
 @dataclass
+class NeuralTrace:
+    """Trace for a neural model inference."""
+
+    function_name: str
+    model_id: str
+    confidence: float
+    threshold: float
+    used_fallback: bool
+    result: Value | None = None
+    latency_ms: float = 0.0
+    error: str | None = None
+
+
+@dataclass
 class ProgramTrace:
     """Trace for a full program execution."""
 
     rule_traces: list[RuleTrace] = field(default_factory=list)
+    neural_traces: list[NeuralTrace] = field(default_factory=list)
     final_result: Value | None = None
     total_duration_ms: float = 0.0
     output_lines: list[str] = field(default_factory=list)
@@ -48,6 +63,9 @@ class ProgramTrace:
 
     def add_rule_trace(self, rt: RuleTrace) -> None:
         self.rule_traces.append(rt)
+
+    def add_neural_trace(self, nt: NeuralTrace) -> None:
+        self.neural_traces.append(nt)
 
 
 class TraceTimer:
@@ -130,6 +148,25 @@ def format_trace(trace: ProgramTrace, verbose: bool = True) -> str:
                     lines.append(f"  {k.lstrip('_')}: {v}")
 
         lines.append("")
+
+    # Neural inference traces
+    if trace.neural_traces:
+        lines.append("── Neural Inference ──")
+        lines.append("")
+        for nt in trace.neural_traces:
+            status = "FALLBACK" if nt.used_fallback else "OK"
+            lines.append(
+                f"[neural {nt.function_name}] {status} "
+                f"(model: {nt.model_id}, confidence: {nt.confidence:.2f}, "
+                f"threshold: {nt.threshold:.2f})"
+            )
+            if nt.result is not None:
+                lines.append(f"  result: {format_value(nt.result)}")
+            if nt.error:
+                lines.append(f"  error: {nt.error}")
+            if nt.latency_ms > 0:
+                lines.append(f"  latency: {nt.latency_ms:.1f}ms")
+            lines.append("")
 
     # Backward chaining proof trees
     if trace.proof_trees:

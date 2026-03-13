@@ -286,7 +286,10 @@ class TestFunctionArity:
 
 class TestCheckResult:
     def test_empty_result(self):
-        result = check_source("define X as 42\n")
+        # X is used in main block, so no unused warning
+        result = check_source(
+            "define X as 42\nmain:\n  print(X)\n"
+        )
         assert not result.has_errors
         assert result.error_count == 0
         assert result.warning_count == 0

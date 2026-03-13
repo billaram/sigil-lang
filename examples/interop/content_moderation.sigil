@@ -1,0 +1,59 @@
+-- content_moderation.sigil
+-- Real-world use case: An API server sends user-generated content to Sigil
+-- Sigil classifies it (neural) + applies business rules (symbolic) → returns decision
+--
+-- Usage:
+--   sigil run examples/interop/content_moderation.sigil \
+--     --input '{"content": "I love this product!", "user_id": "u123", "channel": "reviews"}' \
+--     --trace
+
+import python json
+
+-- Neural: classify the content (falls back to :unknown without transformers)
+neural classify_content from text: Text:
+  model "hf:distilbert-base-uncased-finetuned-sst-2-english"
+  returns Symbol
+  confidence_threshold 0.6
+  fallback to :unknown
+
+-- Business rules: what to do with each classification + context
+
+rule auto_approve with priority 10:
+  when classification is :positive
+  and channel is "reviews"
+  then action is :approve
+  explain "Positive review auto-approved"
+
+rule flag_negative with priority 10:
+  when classification is :negative
+  and channel is "reviews"
+  then action is :flag_for_review
+  explain "Negative review flagged for human review"
+
+rule unknown_hold with priority 5:
+  when classification is :unknown
+  then action is :hold
+  explain "Could not classify — holding for manual review"
+
+rule default_pass with priority 1:
+  when action is not assigned
+  then action is :hold
+  explain "No rule matched — default hold"
+
+main:
+  -- Input comes from external system via --input JSON
+  given content from input
+  given user_id from input
+  given channel from input
+
+  -- Neural classification
+  given classification as classify_content(content)
+
+  -- Run business rules
+  evaluate all rules with {classification: classification, channel: channel, action: action}
+
+  -- Output structured decision (external system parses stdout)
+  print(user_id)
+  print(classification)
+  print(action)
+  print(content)

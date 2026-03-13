@@ -29,6 +29,32 @@ from sigil.interpreter.values import (
 )
 
 
+def _closest_match(name: str, candidates: set[str], max_dist: int = 2) -> str | None:
+    """Find the closest match to name among candidates (Levenshtein distance)."""
+    best, best_dist = None, max_dist + 1
+    for candidate in candidates:
+        dist = _levenshtein(name.lower(), candidate.lower())
+        if dist < best_dist:
+            best, best_dist = candidate, dist
+    return best
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Simple Levenshtein distance."""
+    if len(a) < len(b):
+        return _levenshtein(b, a)
+    if len(b) == 0:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            cost = 0 if ca == cb else 1
+            curr.append(min(curr[j] + 1, prev[j + 1] + 1, prev[j] + cost))
+        prev = curr
+    return prev[len(b)]
+
+
 class ReturnSignal(Exception):  # noqa: N818 — not an error, it's a control flow signal
     """Signal a return statement — unwind the call stack."""
 
@@ -49,6 +75,7 @@ class Evaluator:
         self._module_env: Environment = Environment()
         self.module_loader: object | None = None  # ModuleLoader, set externally
         self.filename: str = "<stdin>"
+        self._call_stack: list[str] = []
 
     def eval_program_repl(
         self,
@@ -149,6 +176,14 @@ class Evaluator:
         """Evaluate an import declaration."""
         from pathlib import Path
 
+        # Python FFI imports
+        if decl.kind == "python":
+            return self._eval_python_import(decl, env)
+
+        # Rust imports — not yet implemented (Sprint 3)
+        if decl.kind == "rust":
+            return env
+
         if self.module_loader is None:
             # No module loader configured — try stdlib builtins directly
             if decl.source.startswith("sigil."):
@@ -193,6 +228,40 @@ class Evaluator:
                 # Also register compute funcs
                 if name in module.compute_funcs:
                     self._compute_funcs[name] = module.compute_funcs[name]
+
+        return env
+
+    def _eval_python_import(
+        self, decl: ast.ImportDecl, env: Environment,
+    ) -> Environment:
+        """Evaluate a Python FFI import."""
+        from sigil.ffi.python_interop import import_python_module, import_python_names
+
+        source = decl.source
+
+        try:
+            if decl.names:
+                # from python X import a, b
+                bindings = import_python_names(source, decl.names)
+                for name, val in bindings.items():
+                    env = env.set(name, val)
+            elif decl.alias:
+                # import python X as Y
+                bindings = import_python_module(source)
+                module_record = Record(type_name=decl.alias, fields=bindings)
+                env = env.set(decl.alias, module_record)
+            else:
+                # import python X — bind as record with module name
+                bindings = import_python_module(source)
+                bind_name = source.rsplit(".", maxsplit=1)[-1]
+                module_record = Record(type_name=bind_name, fields=bindings)
+                env = env.set(bind_name, module_record)
+        except SigilRuntimeError:
+            # Module not available — bind empty record so neural stubs still work.
+            # Actual calls to missing module functions will fail at call time.
+            bind_name = decl.alias or source.rsplit(".", maxsplit=1)[-1]
+            if not decl.names:
+                env = env.set(bind_name, Record(type_name=bind_name, fields={}))
 
         return env
 
@@ -249,6 +318,19 @@ class Evaluator:
         self, rule: ast.RuleDecl, env: Environment,
     ) -> tuple[bool, Value, Environment]:
         """Evaluate a single rule. Returns (fired, action_result, updated_env)."""
+        loc = f"{rule.location}" if rule.location else rule.name
+        self._call_stack.append(f"rule {rule.name} ({loc})")
+        try:
+            return self._eval_single_rule_inner(rule, env)
+        except SigilRuntimeError:
+            raise
+        finally:
+            self._call_stack.pop()
+
+    def _eval_single_rule_inner(
+        self, rule: ast.RuleDecl, env: Environment,
+    ) -> tuple[bool, Value, Environment]:
+        """Inner rule evaluation logic."""
         with TraceTimer() as timer:
             rule_trace = RuleTrace(
                 rule_name=rule.name,
@@ -905,9 +987,9 @@ class Evaluator:
         if func_name in self._compute_funcs:
             return self._call_compute(func_name, args, env)
 
-        # Check neural functions (return fallback)
+        # Check neural functions (model registry with fallback)
         if func_name in self._neural_funcs:
-            return self._call_neural_stub(func_name)
+            return self._call_neural(func_name, args)
 
         # Check built-in functions
         if func_name in BUILTINS:
@@ -925,8 +1007,11 @@ class Evaluator:
         if callable(func_val):
             return func_val(args, self.trace)
 
+        candidates = set(self._compute_funcs) | set(self._neural_funcs)
+        hint = _closest_match(func_name, candidates)
+        suggestion = f"did you mean '{hint}'?" if hint else None
         msg = f"Undefined function: {func_name}"
-        raise SigilRuntimeError(msg)
+        raise SigilRuntimeError(msg, suggestion=suggestion)
 
     def _resolve_func_name(self, expr: ast.Expression, env: Environment) -> str:
         """Resolve a function expression to its name."""
@@ -955,22 +1040,176 @@ class Evaluator:
         # Create a new scope with the bindings
         func_env = env.extend(bindings)
 
+        # Track call stack for error reporting
+        loc = f"{decl.location}" if decl.location else name
+        self._call_stack.append(f"compute {name} ({loc})")
+
         # Execute body
         try:
             for stmt in decl.body:
                 _, func_env = self._eval_statement(stmt, [], func_env)
         except ReturnSignal as ret:
+            self._call_stack.pop()
             return ret.value
+        except SigilRuntimeError:
+            self._call_stack.pop()
+            raise
 
+        self._call_stack.pop()
         return None
 
-    def _call_neural_stub(self, name: str) -> Value:
-        """Call a neural function stub — return the fallback value."""
+    def _build_neural_config(self, decl: ast.NeuralDecl) -> tuple:
+        """Extract all fields from a NeuralDecl into a NeuralConfig + fallback value."""
+        from sigil.neural.backend import NeuralConfig
+
+        model_id = ""
+        return_type = "Symbol"
+        threshold = 0.5
+        fallback_value: Value = None
+        labels: tuple[str, ...] | None = None
+        hypothesis_template: str | None = None
+        system_prompt: str | None = None
+        temperature: float | None = None
+        max_tokens: int | None = None
+        top_p: float | None = None
+        top_k: int | None = None
+        stop_sequences: tuple[str, ...] | None = None
+        output_schema: str | None = None
+        num_candidates = 1
+        beam_size: int | None = None
+        timeout_seconds = 60.0
+
+        env = Environment()
+        for f in decl.fields:
+            if isinstance(f.value, ast.TypeRef):
+                if f.name == "returns":
+                    if isinstance(f.value, ast.NamedType):
+                        return_type = f.value.name
+                    elif isinstance(f.value, ast.ListType):
+                        return_type = "List"
+                    else:
+                        return_type = "Unknown"
+                continue
+
+            val = self.eval_expression(f.value, env)
+
+            if f.name == "model":
+                model_id = str(val)
+            elif f.name == "confidence_threshold":
+                threshold = float(val)  # type: ignore[arg-type]
+            elif f.name == "fallback":
+                fallback_value = val
+            elif f.name == "labels":
+                if isinstance(val, list):
+                    labels = tuple(
+                        v.name if isinstance(v, Symbol) else str(v) for v in val
+                    )
+            elif f.name == "hypothesis":
+                hypothesis_template = str(val)
+            elif f.name == "system_prompt":
+                system_prompt = str(val)
+            elif f.name == "temperature":
+                temperature = float(val)  # type: ignore[arg-type]
+            elif f.name == "max_tokens":
+                max_tokens = int(val)  # type: ignore[arg-type]
+            elif f.name == "top_p":
+                top_p = float(val)  # type: ignore[arg-type]
+            elif f.name == "top_k":
+                top_k = int(val)  # type: ignore[arg-type]
+            elif f.name == "stop_sequences":
+                if isinstance(val, list):
+                    stop_sequences = tuple(str(v) for v in val)
+            elif f.name == "output_schema":
+                output_schema = str(val)
+            elif f.name == "num_candidates":
+                num_candidates = int(val)  # type: ignore[arg-type]
+            elif f.name == "beam_size":
+                beam_size = int(val)  # type: ignore[arg-type]
+            elif f.name == "timeout":
+                timeout_seconds = float(val)  # type: ignore[arg-type]
+
+        config = NeuralConfig(
+            model_id=model_id,
+            return_type=return_type,
+            confidence_threshold=threshold,
+            labels=labels,
+            hypothesis_template=hypothesis_template,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            top_k=top_k,
+            stop_sequences=stop_sequences,
+            output_schema=output_schema,
+            num_candidates=num_candidates,
+            beam_size=beam_size,
+            timeout_seconds=timeout_seconds,
+        )
+        return config, fallback_value
+
+    def _call_neural(self, name: str, args: list[Value]) -> Value:
+        """Call a neural function via the model registry, with fallback."""
+        from sigil.interpreter.trace import NeuralTrace
+        from sigil.neural.registry import get_registry
+
         decl = self._neural_funcs[name]
-        for field in decl.fields:
-            if field.name == "fallback" and isinstance(field.value, ast.Expression):
-                return self.eval_expression(field.value, Environment())
-        return []
+        config, fallback_value = self._build_neural_config(decl)
+
+        model_id = config.model_id
+        threshold = config.confidence_threshold
+
+        # Get input data from args
+        input_data: Value = args[0] if args else None
+
+        # Try the model registry
+        registry = get_registry()
+        if model_id and registry.has_backend(model_id):
+            try:
+                result = registry.predict(model_id, input_data, config)
+                if result.confidence >= threshold:
+                    self.trace.add_neural_trace(NeuralTrace(
+                        function_name=name,
+                        model_id=model_id,
+                        confidence=result.confidence,
+                        threshold=threshold,
+                        used_fallback=False,
+                        result=result.value,
+                        latency_ms=result.latency_ms,
+                    ))
+                    return result.value
+                # Below threshold — use fallback
+                self.trace.add_neural_trace(NeuralTrace(
+                    function_name=name,
+                    model_id=model_id,
+                    confidence=result.confidence,
+                    threshold=threshold,
+                    used_fallback=True,
+                    result=fallback_value,
+                    latency_ms=result.latency_ms,
+                ))
+                return fallback_value
+            except Exception as exc:
+                self.trace.add_neural_trace(NeuralTrace(
+                    function_name=name,
+                    model_id=model_id,
+                    confidence=0.0,
+                    threshold=threshold,
+                    used_fallback=True,
+                    result=fallback_value,
+                    error=str(exc),
+                ))
+                return fallback_value
+
+        # No backend available — return fallback (stub behavior)
+        self.trace.add_neural_trace(NeuralTrace(
+            function_name=name,
+            model_id=model_id,
+            confidence=0.0,
+            threshold=threshold,
+            used_fallback=True,
+            result=fallback_value,
+        ))
+        return fallback_value
 
     def _eval_constructor(self, expr: ast.ConstructorExpr, env: Environment) -> Value:
         """Evaluate a constructor expression like 'approved with rate: value'."""

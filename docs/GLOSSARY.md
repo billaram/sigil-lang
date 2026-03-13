@@ -1,6 +1,6 @@
 # Sigil Language Project — Glossary
 
-> 344 terms across 14 categories. Each term is tagged with its implementation status.
+> 355 terms across 14 categories. Each term is tagged with its implementation status.
 > Use this as a research starting point — when you find a term you want to explore,
 > check if there's already a deep-dive doc in `docs/research/`.
 
@@ -141,9 +141,9 @@
 | **Conflict Resolution** | When multiple rules match simultaneously, the rule with highest priority wins; ties broken by specificity (more conditions), then declaration order | SEMANTICS.md, ARCHITECTURE.md | [IMPL] |
 | **Rule Priority** | Integer value on a rule declaration (`with priority N`) controlling which rule wins conflicts | SYNTAX.md, SEMANTICS.md | [IMPL] |
 | **Fact Space** | The shared environment of named values (facts) against which rules are evaluated; rules can add new facts via SetAction | ARCHITECTURE.md, SEMANTICS.md | [IMPL] |
-| **Rule Index** | A fast lookup structure mapping condition variables to candidate rules; enables efficient matching without scanning all rules | ARCHITECTURE.md | [PLANNED] (Rete, Phase 3) |
-| **Rete Algorithm** | Network-based pattern matching algorithm for efficiently evaluating large rule sets; avoids re-evaluating unchanged conditions | ARCHITECTURE.md, INTEROP.md | [PLANNED] (Rust core, Phase 3) |
-| **Confidence Value** | A Number between 0.0 and 1.0 attached to the result of a neural computation; accessible via explicit `confidence` field access | TYPE_SYSTEM.md, SEMANTICS.md, SYNTAX.md | [IMPL] (stub in evaluator) |
+| **Rule Index** | A fast lookup structure mapping condition variables to candidate rules; enables efficient matching without scanning all rules | ARCHITECTURE.md | [IMPL] (Rete-lite in Rust core) |
+| **Rete Algorithm** | Network-based pattern matching algorithm for efficiently evaluating large rule sets; Sigil implements Rete-lite in `sigil_core/src/matcher.rs` with alpha nodes exposed via PyO3 `ReteNetwork` class | ARCHITECTURE.md, INTEROP.md | [IMPL] (Rust core, Phase 3) |
+| **Confidence Value** | A Number between 0.0 and 1.0 attached to the result of a neural computation; checked against threshold to decide model result vs fallback | TYPE_SYSTEM.md, SEMANTICS.md, SYNTAX.md | [IMPL] |
 | **Fallback** | Mandatory value declared in a neural block, returned when the model's confidence falls below the threshold; guarantees null-safety | SYNTAX.md, SEMANTICS.md, TYPE_SYSTEM.md | [IMPL] |
 | **Neural Stubs** | Current Phase 1-2 implementation of neural declarations: if variable already bound, keeps value; otherwise returns the declared fallback | STATUS.md | [IMPL] |
 | **Mutable Binding** | Opt-in mutability via the `mutable` keyword; all other bindings are immutable | SEMANTICS.md, SYNTAX.md | [IMPL] (in grammar; `becomes` in evaluator) |
@@ -172,7 +172,7 @@
 | **Explanation** | Human-readable string (from `explain` clause) included in the trace when a rule fires; may include interpolated variable values | VISION.md, SYNTAX.md, TYPE_SYSTEM.md | [IMPL] |
 | **Audit Trail** | The trace used as a legal/compliance record of every decision; the primary output in regulated domains | VISION.md, REAL_WORLD_BRIDGE.md | [IMPL] (trace is always on) |
 | **Trace Annotation** | Metadata attached to a rule's trace output: `category`, `retention`, `format`, `compliance` | SYNTAX.md | [IMPL] (parsed) |
-| **Neural vs Symbolic Trace Distinction** | Trace entries are tagged as `:neural` or `:symbolic` so auditors know whether a step was deterministic | SEMANTICS.md, ARCHITECTURE.md | [IMPL] (stub; full in Phase 3) |
+| **Neural vs Symbolic Trace Distinction** | Trace entries are tagged as `:neural` or `:symbolic` so auditors know whether a step was deterministic. `NeuralTrace` dataclass in `ProgramTrace.neural_traces` rendered separately in `format_trace()` | SEMANTICS.md, ARCHITECTURE.md | [IMPL] (Phase 3) |
 | **`sigil.trace` stdlib** | Standard library module for querying and formatting traces: `to_json`, `fired_rules`, `rule_count`, `duration_ms` | STATUS.md | [IMPL] |
 | **Trace Retention** | Configuration on a trace clause specifying how long audit records should be kept (e.g., `7 years`) | SYNTAX.md | [IMPL] (parsed) |
 | **Trace Format** | Configuration on trace output: `:detailed`, `:summary`, table, JSON | SYNTAX.md | [PLANNED] (Phase 4) |
@@ -224,16 +224,21 @@
 | **Type 3: Neural|Symbolic** | Integration pattern where a neural network generates symbolic programs; e.g., LLM → Sigil source code | FOUNDATIONS.md, NS_LANDSCAPE.md | [PLANNED] (Phase 4 NL-to-Sigil generator) |
 | **Type 5: Neural_{Symbolic}** | Tight coupling: symbolic logic tensorized as differentiable constraints; enables end-to-end gradient training through reasoning (Scallop, DeepProbLog) | FOUNDATIONS.md, NS_LANDSCAPE.md | [REF] (future research direction) |
 | **DARPA Three Waves of AI** | John Launchbury's framework: Wave 1 (handcrafted knowledge), Wave 2 (statistical learning), Wave 3 (contextual adaptation = hybrid); Sigil is Wave 3 | FOUNDATIONS.md, NS_LANDSCAPE.md | [REF] |
-| **Neural Bridge** | Sigil's explicit boundary layer between neural perception and symbolic execution: `neural` declarations wrap ML models with Sigil guarantees | ARCHITECTURE.md, VISION.md | [PLANNED] (Phase 3) `interpreter/neural_bridge.py` |
-| **Confidence Threshold** | Minimum confidence a neural model must produce; below this the fallback value is used instead | SYNTAX.md, SEMANTICS.md, TYPE_SYSTEM.md | [IMPL] (stub) |
-| **Neural Backend** | The underlying ML framework (PyTorch, HuggingFace transformers) invoked by a neural declaration | ARCHITECTURE.md, INTEROP.md | [PLANNED] (Phase 3) |
-| **Model Registry** | System for registering, versioning, and loading ML models for use in neural declarations | ARCHITECTURE.md, ROADMAP.md | [PLANNED] (Phase 3) |
+| **Neural Bridge** | Sigil's explicit boundary layer between neural perception and symbolic execution: `neural` declarations wrap ML models with Sigil guarantees. Implemented via pluggable `ModelBackend` protocol + `ModelRegistry` | ARCHITECTURE.md, VISION.md | [IMPL] (Phase 3) `src/sigil/neural/` |
+| **Confidence Threshold** | Minimum confidence a neural model must produce; below this the fallback value is used instead. Evaluated in `_call_neural()` in the interpreter | SYNTAX.md, SEMANTICS.md, TYPE_SYSTEM.md | [IMPL] |
+| **Neural Backend** | The underlying ML framework invoked by a neural declaration. `ModelBackend` protocol with `load()` and `predict()` methods. HuggingFace backend built-in (`hf:` prefix) | ARCHITECTURE.md, INTEROP.md | [IMPL] (Phase 3) |
+| **Model Registry** | Singleton `ModelRegistry` mapping model ID prefixes to `ModelBackend` instances. Lazy-loads models on first predict, caches loaded models. Built-in `hf:` prefix for HuggingFace | ARCHITECTURE.md, ROADMAP.md | [IMPL] (Phase 3) `src/sigil/neural/registry.py` |
 | **Neural TTL Cache** | Time-to-live cache for neural results to avoid redundant model inference calls | ARCHITECTURE.md | [PLANNED] (Phase 3) |
 | **Confidence Propagation** | The (deliberate) non-propagation of confidence through symbolic rules; confidence is only accessible via explicit field access, not implicitly | SEMANTICS.md | [IMPL] (by design) |
 | **NL-to-Sigil Generator** | Phase 4 feature: LLM-powered translation of natural language rule descriptions into valid Sigil programs, with validation pipeline | ROADMAP.md | [PLANNED] (Phase 4) |
 | **Neural Perception** | The role of LLMs/neural networks in a Sigil system: extract structured facts from unstructured input (text, images, sensor data) | VISION.md, REAL_WORLD_BRIDGE.md | [PLANNED] (Phase 3) |
 | **Symbolic Reasoning** | The role of Sigil's rule engine: apply deterministic rules to structured facts to produce decisions with full traces | VISION.md, ARCHITECTURE.md | [IMPL] |
-| **Confidence-to-Predicate Interface** | The core technical challenge in neuro-symbolic systems: converting a probabilistic model output (float 0-1) into a discrete symbolic fact; Sigil's `neural` keyword with `confidence_threshold` is the solution | REAL_WORLD_BRIDGE.md | [IMPL] (stub) |
+| **Confidence-to-Predicate Interface** | The core technical challenge in neuro-symbolic systems: converting a probabilistic model output (float 0-1) into a discrete symbolic fact; Sigil's `neural` keyword with `confidence_threshold` is the solution | REAL_WORLD_BRIDGE.md | [IMPL] |
+| **ModelResult** | Frozen dataclass returned by `ModelBackend.predict()`: contains `value` (Sigil Value), `confidence` (float), `model_id`, `latency_ms` | neural/backend.py | [IMPL] (Phase 3) |
+| **ModelBackend Protocol** | Python `Protocol` class defining the pluggable neural backend interface: `load(model_id)` and `predict(model_id, input_data) -> ModelResult` | neural/backend.py | [IMPL] (Phase 3) |
+| **HuggingFace Backend** | Built-in `ModelBackend` implementation using `transformers.pipeline()` for inference. Registered with `hf:` prefix. Graceful degradation if transformers not installed | neural/huggingface.py | [IMPL] (Phase 3) |
+| **NeuralTrace** | Dataclass recording a neural inference: function name, model ID, confidence, threshold, whether fallback was used, latency, and optional error message. Added to `ProgramTrace.neural_traces` | trace.py | [IMPL] (Phase 3) |
+| **Neural Fallback Cascade** | When a neural model fails (error, low confidence, or no backend): (1) check confidence vs threshold, (2) if below or error, return declared fallback value, (3) always record NeuralTrace | evaluator.py | [IMPL] (Phase 3) |
 | **AlphaGeometry** | DeepMind 2024 system (published in Nature) solving IMO geometry at near-gold-medalist level using neural construction suggester + symbolic deduction engine; primary validation of Sigil's Type 2 architecture | FOUNDATIONS.md, NS_LANDSCAPE.md, BIBLIOGRAPHY.md | [REF] |
 | **AlphaProof** | DeepMind 2024 system achieving IMO silver medal using Gemini + AlphaZero + Lean 4 formal verification; proves neural→formal language→symbolic verification pipeline works at highest level | FOUNDATIONS.md, NS_LANDSCAPE.md, BIBLIOGRAPHY.md | [REF] |
 | **Scallop** | Purpose-built neuro-symbolic DSL (PLDI 2023, U. Penn) based on Datalog + provenance semirings; enables differentiable symbolic reasoning; the closest existing work to Sigil's vision | FOUNDATIONS.md, NS_LANDSCAPE.md, EXISTING_DSLS.md, BIBLIOGRAPHY.md | [REF] |
@@ -272,8 +277,8 @@
 | **Rule Completeness** | Future verification: checking that all possible input cases are covered by at least one rule | ROADMAP.md, ARCHITECTURE.md | [PLANNED] (Phase 5) |
 | **Termination Analysis** | Formal verification that rule chains always reach a fixed point and halt | ROADMAP.md | [PLANNED] (Phase 5) |
 | **SMT Solver (Z3)** | Satisfiability Modulo Theories solver; planned integration for formal rule verification | ROADMAP.md | [PLANNED] (Phase 5) |
-| **Constraint Solver** | Component (Rust core, Phase 3) for high-performance constraint satisfaction | ARCHITECTURE.md, INTEROP.md | [PLANNED] (Phase 3) |
-| **Pattern Matcher** | Rete-based component (Rust core) for efficiently matching rules against large fact sets | ARCHITECTURE.md, INTEROP.md | [PLANNED] (Phase 3) |
+| **Constraint Solver** | Rust-implemented constraint satisfaction engine (`ConstraintSolver` PyO3 class). Supports equals, not-equals, greater/less than, between, one-of constraints. Returns violations list or boolean satisfaction check | ARCHITECTURE.md, INTEROP.md | [IMPL] (Phase 3) `sigil_core/src/solver.rs` |
+| **Pattern Matcher** | Rete-lite implementation (`ReteNetwork` PyO3 class). Compiles rules with conditions, matches against fact dictionaries, returns matches sorted by priority | ARCHITECTURE.md, INTEROP.md | [IMPL] (Phase 3) `sigil_core/src/matcher.rs` |
 | **Drools** | Commercial Java rule engine; represents the "existing symbolic world" Sigil bridges from | REAL_WORLD_BRIDGE.md | [REF] |
 | **OPA (Open Policy Agent)** | Open-source policy engine using Rego language; another existing symbolic system Sigil compares to | REAL_WORLD_BRIDGE.md | [REF] |
 
@@ -346,20 +351,25 @@
 | Term | Description | Where It Appears | Status |
 |------|-------------|-----------------|--------|
 | **Hosted Language** | A language that runs on top of another language's runtime, gaining its ecosystem; Clojure-on-JVM is the archetype; Sigil-on-Python follows the same pattern | INTEROP.md, LANGUAGE_INTEROP.md | [IMPL] (by design) |
-| **Python FFI** | Sigil's ability to import and call Python libraries directly; essentially zero-overhead since both run on the Python VM | INTEROP.md, ARCHITECTURE.md | [IMPL] (Phase 2 Sprint 2 stubs; full Phase 3) |
-| **Rust FFI** | Sigil's ability to call Rust functions from the `sigil_core` crate via PyO3/maturin | INTEROP.md, ARCHITECTURE.md | [PLANNED] (Phase 3) |
-| **FFI Boundary Layer** | The explicit layer in Sigil where type marshaling and error translation occur between Sigil and host languages | INTEROP.md | [IMPL] (Python side); [PLANNED] (Rust side) |
-| **Type Marshaling** | Converting values between Sigil types and Python/Rust types at the FFI boundary: `Number ↔ int/float`, `Text ↔ str`, `Symbol ↔ str`, `Record ↔ dict` | INTEROP.md, LANGUAGE_INTEROP.md | [IMPL] (Python); [PLANNED] (Rust) |
+| **Python FFI** | Sigil's ability to import and call Python libraries directly via `import python X`. Full bidirectional marshaling, error translation, and callable wrapping | INTEROP.md, ARCHITECTURE.md | [IMPL] (Phase 3) `src/sigil/ffi/` |
+| **Rust FFI** | Sigil's Rust core (`sigil_core`) providing `ReteNetwork`, `ConstraintSolver`, and trace serialization via PyO3 | INTEROP.md, ARCHITECTURE.md | [IMPL] (Phase 3) |
+| **FFI Boundary Layer** | The explicit layer in Sigil where type marshaling and error translation occur between Sigil and host languages | INTEROP.md | [IMPL] (Python: `marshal.py`; Rust: `values.rs`) |
+| **Type Marshaling** | Converting values between Sigil types and Python/Rust types at the FFI boundary: `Number ↔ int/float`, `Text ↔ str`, `Symbol ↔ str`, `Record ↔ dict`, `Closure` → error | INTEROP.md, LANGUAGE_INTEROP.md | [IMPL] `ffi/marshal.py`, `sigil_core/src/values.rs` |
 | **PyO3** | Rust library providing safe, high-performance bindings between Rust and Python via the CPython C API | INTEROP.md, LANGUAGE_INTEROP.md, STATUS.md | [IMPL] (PyO3 0.25) |
 | **maturin** | Build tool for compiling Rust extensions and packaging them as Python wheels; `maturin develop` for dev, `maturin build --release` for production | INTEROP.md, LANGUAGE_INTEROP.md, STATUS.md | [IMPL] |
-| **sigil_core** | The Rust crate providing performance-critical components: constraint solver, Rete matcher, trace serialization, (future) bytecode VM | ARCHITECTURE.md, INTEROP.md, STATUS.md | [IMPL] (PyO3 skeleton + `__version__`); [PLANNED] (full components Phase 3) |
-| **`#[pyfunction]`** | PyO3 attribute macro marking a Rust function as callable from Python | LANGUAGE_INTEROP.md | [PLANNED] (Phase 3) |
-| **`#[pyclass]`** | PyO3 attribute macro marking a Rust struct as a Python class | LANGUAGE_INTEROP.md | [PLANNED] (Phase 3) |
+| **sigil_core** | The Rust crate providing performance-critical components: `ReteNetwork` (pattern matcher), `ConstraintSolver`, `serialize_trace_json`/`serialize_trace_compact`, `SigilValue` type. Future: bytecode VM | ARCHITECTURE.md, INTEROP.md, STATUS.md | [IMPL] (Phase 3) |
+| **`#[pyfunction]`** | PyO3 attribute macro marking a Rust function as callable from Python. Used for `serialize_trace_json`, `serialize_trace_compact` | LANGUAGE_INTEROP.md | [IMPL] (Phase 3) |
+| **`#[pyclass]`** | PyO3 attribute macro marking a Rust struct as a Python class. Used for `ReteNetwork`, `ConstraintSolver` | LANGUAGE_INTEROP.md | [IMPL] (Phase 3) |
 | **`#[pymodule]`** | PyO3 attribute macro registering a Rust module for Python import | LANGUAGE_INTEROP.md, STATUS.md | [IMPL] |
 | **Inline Python Block** | `define x as python: ...` escape hatch for complex Python operations not easily expressible in Sigil | INTEROP.md, SYNTAX.md | [PLANNED] (Phase 3) |
-| **Error Translation** | Converting Python exceptions and Rust errors into Sigil error types with source context | INTEROP.md | [PLANNED] (Phase 3) |
+| **Error Translation** | Converting Python exceptions into Sigil error types with source context. `translate_python_error()` wraps exceptions preserving `__cause__` | INTEROP.md | [IMPL] (Phase 3) `ffi/errors.py` |
 | **`using rust` Directive** | Optimization hint on a rule to delegate evaluation to the Rust core; same Sigil code, different execution backend | INTEROP.md, GRAMMAR.peg | [PLANNED] (Phase 3) |
 | **Gradual Rust Migration** | Pattern: start with pure Sigil (Python interpreter), add `using rust` to hot rules later without changing rule code | INTEROP.md | [PLANNED] (Phase 3) |
+| **`wrap_python_callable`** | Function in `ffi/marshal.py` that wraps a Python callable to accept Sigil values (list[Value], ProgramTrace) and return Sigil values. Handles arg marshaling and error translation automatically | ffi/marshal.py | [IMPL] (Phase 3) |
+| **`import_python_module`** | Function that uses `importlib.import_module()` to import a Python module and marshal its public API into a dict of Sigil values. Missing modules fail gracefully (bind empty record) | ffi/python_interop.py | [IMPL] (Phase 3) |
+| **`SigilValue` (Rust)** | Rust enum mirroring the Python `Value` union: `None`, `Bool`, `Int`, `Float`, `Text`, `Symbol`, `Record`, `List`. Implements `from_python()`/`to_python()` for PyO3 marshaling, and serde traits for serialization | sigil_core/src/values.rs | [IMPL] (Phase 3) |
+| **Alpha Node** | In the Rete algorithm: a node testing a single condition on a single fact. Sigil's Rete-lite uses alpha nodes for each condition in a rule | RETE docs | [IMPL] (Phase 3, embedded in matcher.rs) |
+| **Trace Serialization** | Rust-based fast JSON serialization of `ProgramTrace` data. `serialize_trace_json()` (pretty) and `serialize_trace_compact()` (no whitespace) exposed via PyO3 | sigil_core/src/trace.rs | [IMPL] (Phase 3) |
 | **UniFFI** | Mozilla tool generating multi-language FFI bindings from a single Rust crate; future option for JavaScript/Swift/WASM bindings | LANGUAGE_INTEROP.md, BIBLIOGRAPHY.md | [PLANNED] (Phase 5+) |
 | **Project Panama** | JDK 22 Foreign Function & Memory API (4-5x faster than JNI); reference model for managed FFI design | LANGUAGE_INTEROP.md, BIBLIOGRAPHY.md | [REF] |
 | **C ABI** | The stable binary interface for calling C functions from other languages; Rust's `extern "C"` and Zig's `@cImport` both target this; gives Sigil indirect access to C/BLAS/LAPACK via Rust | LANGUAGE_INTEROP.md | [REF] |
@@ -478,9 +488,9 @@
 
 ## Quick-Reference Summary by Status
 
-**Fully Implemented [IMPL]:** Lexer, Parser (recursive descent), AST (40+ nodes), Type Checker (11 checks), Tree-Walking Interpreter (1230 lines), Forward Chaining Engine, Backward Chaining Engine, Proof Trees, REPL, Module System (resolver + loader + cycle detection), Standard Library (math/text/list/logic/time/trace/io), CLI, 665 tests passing, maturin/PyO3 build, Rust skeleton.
+**Fully Implemented [IMPL]:** Lexer, Parser (recursive descent), AST (40+ nodes), Type Checker (11 checks), Tree-Walking Interpreter (1260 lines), Forward Chaining Engine, Backward Chaining Engine, Proof Trees, REPL, Module System (resolver + loader + cycle detection), Standard Library (math/text/list/logic/time/trace/io), CLI, Python FFI (`import python X` with bidirectional marshaling), Neural Bridge (pluggable `ModelBackend` + `ModelRegistry` + HuggingFace backend), Rust Core (Rete-lite pattern matcher, constraint solver, trace serialization via PyO3), 764 tests passing, maturin/PyO3 build.
 
-**Planned [PLANNED]:** Neural Bridge (Phase 3), Rust Constraint Solver (Phase 3), Rete Pattern Matcher (Phase 3), Python FFI (full, Phase 3), NL-to-Sigil Generator (Phase 4), Formatter/Linter (Phase 4), Tree-sitter Grammar (Phase 4), LSP Server (Phase 5), Bytecode VM in Rust (Phase 5), WASM Target (Phase 5), Formal Verification / SMT (Phase 5), Distributed Execution (Phase 5).
+**Planned [PLANNED]:** NL-to-Sigil Generator (Phase 4), Inline Python Blocks (Phase 4), Formatter/Linter (Phase 4), Tree-sitter Grammar (Phase 4), LSP Server (Phase 5), Bytecode VM in Rust (Phase 5), WASM Target (Phase 5), Formal Verification / SMT (Phase 5), Distributed Execution (Phase 5).
 
 **Reference Concepts [REF]:** Neuro-symbolic taxonomy (Kautz Types 1-6), DARPA Three Waves, AlphaGeometry/AlphaProof, Scallop, DeepProbLog, Homoiconicity (LISP), Multiple Dispatch (Julia), all related languages (Prolog, Haskell, Lean 4, Clojure, Inform 7), all regulatory/compliance acronyms, all production industry systems.
 
