@@ -208,6 +208,80 @@ def _cmd_generate(text: str, *, interactive: bool = False) -> None:
             print(f"--   {diag}", file=sys.stderr)
 
 
+def _cmd_verify(file: Path, *, json_output: bool = False) -> None:
+    """Formally verify a .sigil program's rule set."""
+    import json
+
+    from sigil.errors import SigilError
+
+    if not file.exists():
+        print(f"[sigil] Error: file not found: {file}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        from sigil.verifier import verify_file
+        report = verify_file(file)
+    except SigilError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"[sigil] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if json_output:
+        import dataclasses
+        print(json.dumps(dataclasses.asdict(report), indent=2))
+        return
+
+    # Formatted output
+    print(f"Sigil Formal Verification Report")
+    print(f"================================")
+    print(f"Rules: {report.rule_count}  |  Variables: {report.variable_count}  |  BDD vars: {report.bdd_variable_count}")
+    print()
+
+    # Completeness
+    if report.completeness_ok:
+        print("  Completeness .... PASS (100% coverage)")
+    else:
+        print(f"  Completeness .... FAIL ({report.coverage_percent:.1f}% coverage)")
+        if report.completeness_witness:
+            print(f"    Uncovered: {report.completeness_witness}")
+
+    # Dead rules
+    if report.dead_rules:
+        print(f"  Dead rules ...... FAIL ({len(report.dead_rules)} dead)")
+        for name in report.dead_rules:
+            print(f"    - {name} (conditions are unsatisfiable)")
+    else:
+        print("  Dead rules ...... PASS (none)")
+
+    # Conflicts
+    if report.conflicts:
+        print(f"  Conflicts ....... FAIL ({len(report.conflicts)} conflict(s))")
+        for c in report.conflicts:
+            line = f"    - {c['rule_a']} vs {c['rule_b']}"
+            if c.get("witness"):
+                line += f" when {c['witness']}"
+            print(line)
+    else:
+        print("  Conflicts ....... PASS (none)")
+
+    # Termination
+    if report.terminates:
+        print("  Termination ..... PASS")
+    else:
+        print(f"  Termination ..... FAIL ({len(report.cycles)} cycle(s))")
+        for cycle in report.cycles:
+            print(f"    - {' -> '.join(cycle)}")
+
+    print()
+    if report.is_sound:
+        print("Result: SOUND -- all checks passed")
+    else:
+        print("Result: ISSUES FOUND -- see above")
+        sys.exit(1)
+
+
 def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) -> None:
     """Run a .sigil program."""
     import json
@@ -347,6 +421,14 @@ def main() -> None:
         help="Treat warnings as errors",
     )
 
+    # sigil verify
+    verify_parser = subparsers.add_parser("verify", help="Formally verify rule set")
+    verify_parser.add_argument("file", type=Path, help="Path to .sigil file")
+    verify_parser.add_argument(
+        "--json", action="store_true",
+        help="Output raw JSON report",
+    )
+
     # sigil code
     code_parser = subparsers.add_parser(
         "code", help="Interactive Sigil Code agent (AI assistant)",
@@ -394,6 +476,9 @@ def main() -> None:
 
     elif args.command == "lint":
         _cmd_lint(args.file, strict=args.strict)
+
+    elif args.command == "verify":
+        _cmd_verify(args.file, json_output=args.json)
 
     elif args.command == "code":
         from sigil.agent.session import run_agent_session

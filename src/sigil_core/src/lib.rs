@@ -4,6 +4,7 @@ mod matcher;
 mod solver;
 mod trace;
 mod values;
+mod verifier;
 
 /// Sigil performance core — Rust extensions via PyO3.
 #[pymodule]
@@ -19,6 +20,9 @@ fn _sigil_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Trace serialization
     m.add_function(wrap_pyfunction!(trace::serialize_trace_json, m)?)?;
     m.add_function(wrap_pyfunction!(trace::serialize_trace_compact, m)?)?;
+
+    // Formal verification
+    m.add_function(wrap_pyfunction!(verifier::verify_program, m)?)?;
 
     Ok(())
 }

@@ -1,9 +1,9 @@
 # Project Status — KEEP THIS UPDATED
 
-> **Last updated**: 2026-03-12
-> **Current phase**: Phase 4 (Production Readiness) — COMPLETE (all 5 sprints)
-> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints)
-> **Next**: Phase 5 — see docs/ROADMAP.md
+> **Last updated**: 2026-03-13
+> **Current phase**: Phase 5 (Formal Verification + Optimization) — Sprint 1 COMPLETE
+> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints), Phase 5 Sprint 1
+> **Next**: Phase 5 Sprint 2 (Bytecode VM) — see PRP/phase5-plan.md
 > **Previous phases**: Phase 1 — COMPLETE, Phase 2 — COMPLETE, Phase 3 — COMPLETE
 
 ---
@@ -25,7 +25,7 @@
 - [x] `pyproject.toml` with maturin build (Rust 1.94.0 + PyO3 0.25)
 - [x] `.gitignore`, `LICENSE` (MIT)
 - [x] Python package skeleton (`src/sigil/` with all subpackages)
-- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse`, `sigil code` all working
+- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse`, `sigil code`, `sigil verify` all working
 - [x] `maturin develop` — builds Rust core + installs Python package
 - [x] Virtual environment at `.venv` (Python 3.14.3)
 - [x] Rust crate (`src/sigil_core/`) — ReteNetwork, ConstraintSolver, trace serialization
@@ -149,7 +149,7 @@
 - `src/sigil_core/src/trace.rs` — Trace serialization
   - `serialize_trace_json()` (pretty), `serialize_trace_compact()` (no whitespace)
   - Handles rule traces, neural traces, output lines, duration
-- `Cargo.toml` — serde + serde_json dependencies
+- `Cargo.toml` — serde + serde_json + biodivine-lib-bdd dependencies
 - Benchmarks: `benchmarks/bench_rust_vs_python.py`
   - Pattern matching: ~2.4x speedup (release mode, 50 rules)
   - Trace serialization: ~1.3x speedup (release mode)
@@ -234,8 +234,21 @@
 - `sigil code` CLI subcommand — launches interactive agent session
 - 58 tests (22 tool, 12 loop, 14 prompt, 6 template, 4 session/CLI)
 
+### Formal Verification (Complete — Phase 5 Sprint 1)
+- `src/sigil_core/src/verifier/` — BDD-based formal verification (Rust)
+  - `mod.rs` — Entry point, data structures (`ConditionInfo`, `RuleInfo`, `ActionInfo`), Python FFI extraction, `verify_program()` PyO3 function
+  - `discretize.rs` — Threshold extraction from rule conditions (numeric, symbol, boolean, assigned, empty)
+  - `encoder.rs` — BDD encoder using `biodivine-lib-bdd`: threshold predicates (`x_le_N`), symbol equality, monotonicity constraints, mutual exclusion
+  - `checkers.rs` — 4 verification checks: completeness, dead rules, conflicts, termination (cycle detection)
+  - `witness.rs` — BDD valuation → human-readable counterexample decoding
+  - `report.rs` — `VerificationReport` with serde serialization
+- `src/sigil/verifier/` — Python wrapper
+  - `wrapper.py` — AST rule extraction, condition-to-dict conversion, `verify_program()`, `verify_file()`, `VerificationReport` dataclass
+- `sigil verify file.sigil` — CLI command with formatted + JSON output
+- 25 Rust unit tests + 25 Python integration tests (50 total)
+
 ### Test Suite
-- **1000 tests total**, all passing:
+- **1025 tests total**, all passing:
   - 91 lexer tests
   - 75 parser tests (+ 12 pipeline parsing tests)
   - 137 interpreter tests (Phase 1)
@@ -300,6 +313,9 @@
   - 14 prompt validation tests (system prompt assembly, syntax reference inclusion)
   - 6 template tests (basic, rules, neural, full + toolchain validation)
   - 4 session/CLI tests
+  - **Phase 5 Sprint 1 (25 new Python tests, 25 Rust tests):**
+  - 25 Rust verifier unit tests (discretize, encoder, checkers, witness)
+  - 25 Python verifier integration tests (completeness, dead rules, conflicts, termination, file-based, direct Rust)
 
 ---
 
@@ -419,7 +435,20 @@
 - [x] CLI: `sigil code` launches interactive agent session
 - [x] 58 new tests → 1000 total
 
-### Phase 5+: See `docs/ROADMAP.md`
+## Phase 5 Plan (Formal Verification + Optimization)
+
+### Sprint 1: BDD-Based Formal Verification — COMPLETE
+- [x] `biodivine-lib-bdd` dependency added to Rust core
+- [x] Threshold discretization (extract comparison points from rules)
+- [x] BDD encoder (conditions → boolean formulas with monotonicity/mutual-exclusion)
+- [x] 4 verification checkers: completeness, dead rules, conflicts, termination
+- [x] Witness decoder (BDD valuation → human-readable counterexample)
+- [x] Python wrapper (AST extraction + Rust FFI)
+- [x] CLI: `sigil verify file.sigil` with formatted + `--json` output
+- [x] 50 new tests (25 Rust + 25 Python) → 1025 total
+
+### Sprint 2: Bytecode VM — PLANNED
+### Sprint 3: WASM Target — PLANNED
 
 ---
 
@@ -459,6 +488,8 @@
 | 2026-03-11 | Neural v2: timeout via threading | Thread-based timeout around backend.predict(); TimeoutError triggers fallback | asyncio (would infect evaluator), signal (not cross-platform) |
 | 2026-03-12 | Generator prompts: `**` → `pow()` | `**` operator not in Sigil grammar; prompt examples in `generator/prompts.py` line 114 replaced with `pow()` stdlib call | Keep `**` (would require lexer/parser changes) |
 | 2026-03-12 | Sigil Code agent: ReACT loop | Tool-use based agent loop using Anthropic API; 7 tools for validate/execute/format/scaffold workflow | Direct code generation (no iteration), CLI wizard (no AI) |
+| 2026-03-13 | Formal verification: BDD via biodivine-lib-bdd | Pure Rust, WASM-safe, 40+ years proven for rule verification, canonical form for O(1) satisfiability | Z3 (200MB C++ binary, no WASM), custom interval solver (reinvents wheel), OxiZ (too immature) |
+| 2026-03-13 | Conflict checker: same-target only | Rules writing different variables don't conflict in Sigil's forward chaining model; only flag overlapping rules that write the same variable with different values | Flag all overlapping rules with different actions (too many false positives) |
 
 ---
 
