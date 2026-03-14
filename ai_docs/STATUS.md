@@ -1,9 +1,9 @@
 # Project Status — KEEP THIS UPDATED
 
 > **Last updated**: 2026-03-13
-> **Current phase**: Phase 5 (Formal Verification + Optimization) — Sprint 1 COMPLETE
-> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints), Phase 5 Sprint 1
-> **Next**: Phase 5 Sprint 2 (Bytecode VM) — see PRP/phase5-plan.md
+> **Current phase**: Phase 5 (Formal Verification + Optimization) — Sprint 2 COMPLETE
+> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints), Phase 5 Sprint 1-2
+> **Next**: Phase 5 Sprint 3 (WASM Target)
 > **Previous phases**: Phase 1 — COMPLETE, Phase 2 — COMPLETE, Phase 3 — COMPLETE
 
 ---
@@ -25,7 +25,7 @@
 - [x] `pyproject.toml` with maturin build (Rust 1.94.0 + PyO3 0.25)
 - [x] `.gitignore`, `LICENSE` (MIT)
 - [x] Python package skeleton (`src/sigil/` with all subpackages)
-- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse`, `sigil code`, `sigil verify` all working
+- [x] CLI: `sigil --help`, `sigil lex`, `sigil parse-ast`, `sigil run`, `sigil run --vm`, `sigil check`, `sigil repl`, `sigil fmt`, `sigil lint`, `sigil parse`, `sigil code`, `sigil verify` all working
 - [x] `maturin develop` — builds Rust core + installs Python package
 - [x] Virtual environment at `.venv` (Python 3.14.3)
 - [x] Rust crate (`src/sigil_core/`) — ReteNetwork, ConstraintSolver, trace serialization
@@ -247,8 +247,27 @@
 - `sigil verify file.sigil` — CLI command with formatted + JSON output
 - 25 Rust unit tests + 25 Python integration tests (50 total)
 
+### Bytecode VM (Complete — Phase 5 Sprint 2)
+- `src/sigil_core/src/vm/` — Rust VM engine (8 files):
+  - `opcodes.rs` — ~45 instruction Opcode enum
+  - `stack.rs` — VMValue enum (None, Unbound, Bool, Int, Float, Text, Symbol, Record, Variant, List, Closure)
+  - `chunk.rs` — Chunk struct (bytecode + string pool + functions + rules)
+  - `frames.rs` — CallFrame + CallStack for function calls
+  - `engine.rs` — Iterative dispatch loop (~400 lines), recursion limit 500
+  - `builtins.rs` — 15 builtin functions (print, max, min, len, sqrt, abs, etc.)
+  - `rules.rs` — Forward chaining loop (priority sorting, fixed-point, fired_rules tracking)
+  - `mod.rs` — SigilVM PyO3 class with execute() method
+- `src/sigil/vm/` — Python compiler + runner (3 files):
+  - `compiler.py` — AST → bytecode compiler (~600 lines, string interning, all 11 condition types)
+  - `runner.py` — compile_and_run() thin wrapper with value marshaling
+  - `__init__.py` — exports VMCompiler, compile_and_run
+- CLI: `sigil run file.sigil --vm` — opt-in VM execution
+- Architecture: Python compiler walks AST → emits bytecode dict → PyO3 → Rust VM executes
+- Features: arithmetic, variables, if/elif/else, for loops, given/becomes, compute functions (recursive), match expressions, records, lists, symbols, all 11 rule condition types, forward chaining, builtins
+- 176 VM tests (77 foundation + 39 statements + 41 rules + 19 integration)
+
 ### Test Suite
-- **1025 tests total**, all passing:
+- **1201 tests total**, all passing:
   - 91 lexer tests
   - 75 parser tests (+ 12 pipeline parsing tests)
   - 137 interpreter tests (Phase 1)
@@ -316,6 +335,11 @@
   - **Phase 5 Sprint 1 (25 new Python tests, 25 Rust tests):**
   - 25 Rust verifier unit tests (discretize, encoder, checkers, witness)
   - 25 Python verifier integration tests (completeness, dead rules, conflicts, termination, file-based, direct Rust)
+  - **Phase 5 Sprint 2 (176 new VM tests):**
+  - 77 VM foundation tests (compiler, expressions, functions, control flow, builtins, lists, records, symbols, input, rules, conditions, parity)
+  - 39 VM statement tests (if/elif, for loops, given, becomes, builtins, functions, match, edge cases, parity)
+  - 41 VM rule tests (all condition types, compound conditions, forward chaining, actions, compute+rules, constants+rules, unbound, parity)
+  - 19 VM integration tests (CLI --vm flag, example files, match expressions, complex programs, rule chaining, records, benchmarks)
 
 ---
 
@@ -447,7 +471,19 @@
 - [x] CLI: `sigil verify file.sigil` with formatted + `--json` output
 - [x] 50 new tests (25 Rust + 25 Python) → 1025 total
 
-### Sprint 2: Bytecode VM — PLANNED
+### Sprint 2: Bytecode VM — COMPLETE
+- [x] Rust VM engine (8 files: opcodes, stack, chunk, frames, engine, builtins, rules, mod)
+- [x] Python bytecode compiler (~600 lines, compiles all AST node types)
+- [x] Runner with PyO3 value marshaling
+- [x] ~45 opcodes: stack, arithmetic, comparison, logic, variables, control flow, functions, conditions, rules, output
+- [x] Forward chaining rule engine in bytecode (priority sorting, fixed-point, no re-fire)
+- [x] All 11 condition types (exceeds, below, at_least, at_most, between, is, is_not, is_assigned, is_empty, contains, in_list)
+- [x] Iterative dispatch loop (avoids native stack overflow on deep recursion)
+- [x] CLI: `sigil run file.sigil --vm` opt-in flag
+- [x] Tree-walker parity tests (match, fibonacci, factorial, loops, rules)
+- [x] Benchmarks (fibonacci 1.6x speedup, rules/loops overhead from PyO3 marshaling)
+- [x] 176 new tests → 1201 total
+
 ### Sprint 3: WASM Target — PLANNED
 
 ---
@@ -490,6 +526,8 @@
 | 2026-03-12 | Sigil Code agent: ReACT loop | Tool-use based agent loop using Anthropic API; 7 tools for validate/execute/format/scaffold workflow | Direct code generation (no iteration), CLI wizard (no AI) |
 | 2026-03-13 | Formal verification: BDD via biodivine-lib-bdd | Pure Rust, WASM-safe, 40+ years proven for rule verification, canonical form for O(1) satisfiability | Z3 (200MB C++ binary, no WASM), custom interval solver (reinvents wheel), OxiZ (too immature) |
 | 2026-03-13 | Conflict checker: same-target only | Rules writing different variables don't conflict in Sigil's forward chaining model; only flag overlapping rules that write the same variable with different values | Flag all overlapping rules with different actions (too many false positives) |
+| 2026-03-13 | Bytecode VM: Python compiler + Rust VM | AST is 40+ Python dataclasses; rewriting in Rust is Phase 5.3 work. Bytecode is the clean interface — same bytes feed PyO3 VM and future WASM VM. Matches CPython's architecture. | Full Rust compiler (too much work), transpiler (loses trace semantics) |
+| 2026-03-13 | VM: Iterative dispatch loop | Recursive call_function caused native stack overflow on deep recursion (fib(15)). Made call_function just set IP; dispatch_loop continues iteratively. | Increase stack size (fragile), trampoline (more complex) |
 
 ---
 

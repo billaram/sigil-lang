@@ -282,12 +282,17 @@ def _cmd_verify(file: Path, *, json_output: bool = False) -> None:
         sys.exit(1)
 
 
-def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) -> None:
+def _cmd_run(
+    file: Path,
+    *,
+    trace: bool = False,
+    input_json: str | None = None,
+    vm: bool = False,
+) -> None:
     """Run a .sigil program."""
     import json
 
     from sigil.errors import SigilError, SigilParseErrors
-    from sigil.interpreter.trace import format_trace
     from sigil.lexer import tokenize
     from sigil.parser import parse
 
@@ -320,8 +325,13 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
             sys.exit(1)
         input_data = {k: _json_to_sigil(v) for k, v in raw.items()}
 
+    if vm:
+        _cmd_run_vm(program, input_data)
+        return
+
     # Configure module loader
     from sigil.interpreter.evaluator import Evaluator
+    from sigil.interpreter.trace import format_trace
     from sigil.modules.loader import ModuleLoader
     from sigil.modules.resolver import ModuleResolver
 
@@ -349,6 +359,23 @@ def _cmd_run(file: Path, *, trace: bool = False, input_json: str | None = None) 
         if result is not None and not program_trace.output_lines:
             from sigil.interpreter.values import format_value
             print(format_value(result))
+
+
+def _cmd_run_vm(program: object, input_data: dict[str, Value] | None) -> None:
+    """Execute a program using the bytecode VM."""
+    from sigil.vm.runner import compile_and_run
+
+    try:
+        result, output_lines, bindings = compile_and_run(program, input_data)
+    except Exception as e:
+        print(f"[sigil] VM runtime error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for line in output_lines:
+        print(line)
+    if result is not None and not output_lines:
+        from sigil.interpreter.values import format_value
+        print(format_value(result))
 
 
 def _json_to_sigil(obj: object) -> Value:
@@ -385,6 +412,7 @@ def main() -> None:
     run_parser.add_argument("file", type=Path, help="Path to .sigil file")
     run_parser.add_argument("--trace", action="store_true", help="Show execution trace")
     run_parser.add_argument("--input", type=str, default=None, help="Input data as JSON")
+    run_parser.add_argument("--vm", action="store_true", help="Use bytecode VM instead of tree-walker")
 
     # sigil repl
     subparsers.add_parser("repl", help="Start interactive Sigil REPL")
@@ -455,7 +483,7 @@ def main() -> None:
         _cmd_parse_ast(args.file)
 
     elif args.command == "run":
-        _cmd_run(args.file, trace=args.trace, input_json=args.input)
+        _cmd_run(args.file, trace=args.trace, input_json=args.input, vm=args.vm)
 
     elif args.command == "repl":
         from sigil.interpreter.repl import run_repl
