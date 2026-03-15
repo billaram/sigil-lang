@@ -1,9 +1,9 @@
 # Project Status — KEEP THIS UPDATED
 
-> **Last updated**: 2026-03-13
-> **Current phase**: Phase 5 (Formal Verification + Optimization) — Sprint 2 COMPLETE
-> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints), Phase 5 Sprint 1-2
-> **Next**: Phase 5 Sprint 3 (WASM Target)
+> **Last updated**: 2026-03-15
+> **Current phase**: Phase 5 (Formal Verification + Optimization) — Sprint 3 COMPLETE
+> **Completed sprints**: Phase 1, Phase 2 (3 sprints), Phase 3 (3 sprints + Neural Bridge v2), Phase 4 (5 sprints), Phase 5 Sprint 1-3
+> **Next**: Phase 6 (TBD — LSP, playground, npm packaging)
 > **Previous phases**: Phase 1 — COMPLETE, Phase 2 — COMPLETE, Phase 3 — COMPLETE
 
 ---
@@ -266,8 +266,28 @@
 - Features: arithmetic, variables, if/elif/else, for loops, given/becomes, compute functions (recursive), match expressions, records, lists, symbols, all 11 rule condition types, forward chaining, builtins
 - 176 VM tests (77 foundation + 39 statements + 41 rules + 19 integration)
 
+### WASM Target (Complete — Phase 5 Sprint 3)
+- `src/sigil_core/Cargo.toml` — Feature flags: `pyo3-ext` (default), `wasm` (wasm-bindgen + js-sys)
+- `src/sigil_core/src/lib.rs` — Conditional compilation: PyO3 modules gated, frontend modules always available
+- `src/sigil_core/src/lexer/` — Rust lexer (3 files):
+  - `tokens.rs` — TokenType enum (80+ variants), Token struct, KEYWORDS, UNIT_SUFFIXES
+  - `scanner.rs` — Full tokenizer with indentation engine, strings, numbers, symbols, comments
+  - `tests.rs` — 30 lexer tests
+- `src/sigil_core/src/parser/` — Rust parser (3 files):
+  - `ast.rs` — 40+ AST node types (enums/structs, all derive Debug + Clone)
+  - `parser.rs` — 2000+ line recursive descent parser, expression precedence chain
+  - `tests.rs` — 24 parser tests
+- `src/sigil_core/src/compiler/` — Rust bytecode compiler (2 files):
+  - `mod.rs` — AST → Chunk compilation (expressions, statements, conditions, rules, actions)
+  - `tests.rs` — 18 compiler tests (compilation + end-to-end execution)
+- `src/sigil_core/src/wasm.rs` — WASM bindings via wasm-bindgen:
+  - `SigilRuntime` struct with `new()`, `run()`, `compile()`, `execute()` methods
+  - JSON I/O via serde_json for input/output marshaling
+- Architecture: Source → Rust Lexer → Rust Parser → Rust AST → Rust Compiler → Chunk → Rust VM (no Python)
+- Dual build verified: `maturin develop` (PyO3) and `cargo check --no-default-features` (WASM-like)
+
 ### Test Suite
-- **1201 tests total**, all passing:
+- **1201 Python + 72 Rust tests**, all passing:
   - 91 lexer tests
   - 75 parser tests (+ 12 pipeline parsing tests)
   - 137 interpreter tests (Phase 1)
@@ -340,6 +360,10 @@
   - 39 VM statement tests (if/elif, for loops, given, becomes, builtins, functions, match, edge cases, parity)
   - 41 VM rule tests (all condition types, compound conditions, forward chaining, actions, compute+rules, constants+rules, unbound, parity)
   - 19 VM integration tests (CLI --vm flag, example files, match expressions, complex programs, rule chaining, records, benchmarks)
+  - **Phase 5 Sprint 3 (72 new Rust tests):**
+  - 30 Rust lexer tests (keywords, numbers, strings, symbols, operators, indentation, comments, errors)
+  - 24 Rust parser tests (constants, compute, rules, types, conditions, statements, expressions)
+  - 18 Rust compiler tests (compilation verification + end-to-end VM execution)
 
 ---
 
@@ -484,7 +508,18 @@
 - [x] Benchmarks (fibonacci 1.6x speedup, rules/loops overhead from PyO3 marshaling)
 - [x] 176 new tests → 1201 total
 
-### Sprint 3: WASM Target — PLANNED
+### Sprint 3: WASM Target — COMPLETE
+- [x] Feature flags: `pyo3-ext` (default) and `wasm` features in Cargo.toml
+- [x] Conditional compilation: PyO3-only modules gated, VM core shared
+- [x] Rust lexer: TokenType enum (80+ variants), Scanner with indentation engine
+- [x] Rust AST: 40+ node types ported from Python frozen dataclasses
+- [x] Rust parser: 2000+ line recursive descent parser (full port)
+- [x] Rust compiler: AST → Chunk bytecode compilation (all expression/statement/condition/action types)
+- [x] WASM bindings: `SigilRuntime` with `run()`, `compile()`, `execute()` via wasm-bindgen
+- [x] JSON I/O for WASM (serde_json for input/output marshaling)
+- [x] Dual build: PyO3 build (`maturin develop`) + WASM build (`cargo check --no-default-features`) both work
+- [x] 72 Rust tests (30 lexer + 24 parser + 18 compiler), 176 Python VM tests still passing
+- [x] End-to-end: source → lex → parse → compile → VM execute fully in Rust (no Python needed)
 
 ---
 
@@ -528,6 +563,8 @@
 | 2026-03-13 | Conflict checker: same-target only | Rules writing different variables don't conflict in Sigil's forward chaining model; only flag overlapping rules that write the same variable with different values | Flag all overlapping rules with different actions (too many false positives) |
 | 2026-03-13 | Bytecode VM: Python compiler + Rust VM | AST is 40+ Python dataclasses; rewriting in Rust is Phase 5.3 work. Bytecode is the clean interface — same bytes feed PyO3 VM and future WASM VM. Matches CPython's architecture. | Full Rust compiler (too much work), transpiler (loses trace semantics) |
 | 2026-03-13 | VM: Iterative dispatch loop | Recursive call_function caused native stack overflow on deep recursion (fib(15)). Made call_function just set IP; dispatch_loop continues iteratively. | Increase stack size (fragile), trampoline (more complex) |
+| 2026-03-15 | WASM: Feature flag isolation | `pyo3-ext` (default) and `wasm` features never both active. PyO3-only modules gated at mod level in lib.rs; VM core types shared. | Separate crates (duplicates code), #[cfg] on every item (too noisy) |
+| 2026-03-15 | WASM: Rust compiler produces Chunk directly | Bypasses PyO3 deserialization; same Chunk struct feeds both PyO3 VM and WASM VM. | Serialize to JSON then deserialize (unnecessary overhead) |
 
 ---
 
