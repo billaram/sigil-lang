@@ -8,22 +8,27 @@ pub mod opcodes;
 mod rules;
 pub mod stack;
 
+#[cfg(feature = "pyo3-ext")]
 use pyo3::prelude::*;
+#[cfg(feature = "pyo3-ext")]
 use pyo3::types::{PyDict, PyList, PyString};
+#[cfg(feature = "pyo3-ext")]
 use std::collections::HashMap;
 
-use chunk::{Chunk, FuncInfo, RuleInfo};
-use engine::Engine;
-use opcodes::Opcode;
-use stack::VMValue;
+pub use chunk::{Chunk, FuncInfo, RuleInfo};
+pub use engine::Engine;
+pub use opcodes::Opcode;
+pub use stack::VMValue;
 
 /// The SigilVM PyO3 class — receives compiled bytecode and executes it.
-#[pyclass]
+#[cfg(feature = "pyo3-ext")]
+#[cfg_attr(feature = "pyo3-ext", pyclass)]
 pub struct SigilVM {
     engine: Option<Engine>,
 }
 
-#[pymethods]
+#[cfg(feature = "pyo3-ext")]
+#[cfg_attr(feature = "pyo3-ext", pymethods)]
 impl SigilVM {
     #[new]
     pub fn new() -> Self {
@@ -77,6 +82,7 @@ impl SigilVM {
     }
 }
 
+#[cfg(feature = "pyo3-ext")]
 /// Deserialize a Python dict into a Chunk.
 fn deserialize_chunk(dict: &Bound<'_, PyDict>, py: Python<'_>) -> PyResult<Chunk> {
     let mut chunk = Chunk::new();
@@ -185,6 +191,7 @@ fn deserialize_chunk(dict: &Bound<'_, PyDict>, py: Python<'_>) -> PyResult<Chunk
     Ok(chunk)
 }
 
+#[cfg(feature = "pyo3-ext")]
 /// Deserialize a single opcode from a Python list [opname, ...args].
 fn deserialize_opcode(obj: &Bound<'_, PyAny>, _py: Python<'_>) -> PyResult<Opcode> {
     let list = obj.downcast::<PyList>()?;

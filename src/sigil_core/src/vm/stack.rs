@@ -1,6 +1,8 @@
 //! VM value stack and VMValue type.
 
+#[cfg(feature = "pyo3-ext")]
 use pyo3::prelude::*;
+#[cfg(feature = "pyo3-ext")]
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use std::collections::HashMap;
 use std::fmt;
@@ -96,6 +98,7 @@ impl VMValue {
     }
 
     /// Convert from Python object.
+    #[cfg(feature = "pyo3-ext")]
     pub fn from_python(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         if obj.is_none() {
             return Ok(VMValue::None);
@@ -150,6 +153,7 @@ impl VMValue {
     }
 
     /// Convert to Python object.
+    #[cfg(feature = "pyo3-ext")]
     pub fn to_python(&self, py: Python<'_>) -> PyResult<PyObject> {
         match self {
             VMValue::None | VMValue::Unbound => Ok(py.None()),
