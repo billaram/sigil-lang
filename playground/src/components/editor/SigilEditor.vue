@@ -1,27 +1,26 @@
 <script setup lang="ts">
-import { ref, toRef, type Ref } from 'vue'
+import { ref, toRef } from 'vue'
 import { useEditor } from '@/composables/useEditor'
 
 const props = defineProps<{
   darkMode: boolean
+  initialValue: string
 }>()
 
-const source = defineModel<string>('source', { required: true })
 const emit = defineEmits<{ run: [] }>()
-
 const container = ref<HTMLElement | null>(null)
 
-const { setMarkers, clearMarkers } = useEditor(
+const { getValue, setValue, setMarkers, clearMarkers } = useEditor(
   container,
   {
     language: 'sigil',
-    value: source as Ref<string>,
+    initialValue: props.initialValue,
     onRun: () => emit('run'),
   },
   toRef(props, 'darkMode'),
 )
 
-defineExpose({ setMarkers, clearMarkers })
+defineExpose({ getValue, setValue, setMarkers, clearMarkers })
 </script>
 
 <template>

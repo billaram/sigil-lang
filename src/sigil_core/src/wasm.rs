@@ -11,6 +11,7 @@ use crate::parser;
 use crate::vm::{Engine, VMValue};
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// Runtime for executing Sigil programs from WASM.
 #[wasm_bindgen]
@@ -30,7 +31,7 @@ impl SigilRuntime {
 
     /// Full pipeline: source code + input JSON → result JSON.
     ///
-    /// Returns a JSON object with `output_lines`, `result`, and `bindings`.
+    /// Returns a JSON object with `output_lines`, `result`, `bindings`, and `trace`.
     /// On error, returns a JSON object with an `error` field.
     pub fn run(&self, source: &str, input_json: &str) -> String {
         match self.run_inner(source, input_json) {
@@ -85,6 +86,65 @@ impl SigilRuntime {
 
         let vm_result = engine.run().map_err(|e| format!("VM error: {}", e))?;
 
+        // Build trace: which rules fired + explain strings
+        let mut trace_entries = Vec::new();
+        let mut fired_rules: HashSet<String> = HashSet::new();
+
+        // Detect fired rules by checking if their action side-effects occurred
+        // We reconstruct from the rule definitions + bindings
+        for rule in &chunk.rules {
+            // Try evaluating the condition to see if this rule would fire
+            let mut test_engine = Engine::new(chunk.clone());
+            // Copy all bindings from the executed engine
+            let bindings = engine.call_stack.all_bindings();
+            let mut test_inputs = HashMap::new();
+            for (k, v) in &bindings {
+                test_inputs.insert(k.clone(), v.clone());
+            }
+            // Also copy original inputs
+            for (key, val) in &input {
+                test_inputs.insert(key.clone(), json_to_vmvalue(val));
+            }
+            test_engine.load_inputs(test_inputs);
+
+            // Check condition
+            if let Ok(true) = test_engine.execute_from(rule.cond_offset) {
+                let explain = rule.explain_idx
+                    .and_then(|idx| chunk.strings.get(idx as usize))
+                    .cloned()
+                    .unwrap_or_default();
+
+                if !fired_rules.contains(&rule.name) {
+                    trace_entries.push(serde_json::json!({
+                        "rule": rule.name,
+                        "priority": rule.priority,
+                        "fired": true,
+                        "explain": explain,
+                    }));
+                    fired_rules.insert(rule.name.clone());
+                }
+            } else {
+                let explain = rule.explain_idx
+                    .and_then(|idx| chunk.strings.get(idx as usize))
+                    .cloned()
+                    .unwrap_or_default();
+
+                trace_entries.push(serde_json::json!({
+                    "rule": rule.name,
+                    "priority": rule.priority,
+                    "fired": false,
+                    "explain": explain,
+                }));
+            }
+        }
+
+        // Sort trace by priority descending
+        trace_entries.sort_by(|a, b| {
+            let pa = a["priority"].as_i64().unwrap_or(0);
+            let pb = b["priority"].as_i64().unwrap_or(0);
+            pb.cmp(&pa)
+        });
+
         // Collect results
         let mut result = serde_json::Map::new();
         result.insert("output_lines".into(), serde_json::to_value(&engine.output_lines).unwrap());
@@ -96,6 +156,7 @@ impl SigilRuntime {
             bindings_json.insert(k.clone(), vmvalue_to_json(v));
         }
         result.insert("bindings".into(), serde_json::Value::Object(bindings_json));
+        result.insert("trace".into(), serde_json::Value::Array(trace_entries));
 
         serde_json::to_string(&result).map_err(|e| format!("JSON serialization error: {}", e))
     }

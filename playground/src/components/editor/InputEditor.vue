@@ -1,23 +1,24 @@
 <script setup lang="ts">
-import { ref, toRef, type Ref } from 'vue'
+import { ref, toRef } from 'vue'
 import { useEditor } from '@/composables/useEditor'
 
 const props = defineProps<{
   darkMode: boolean
+  initialValue: string
 }>()
-
-const input = defineModel<string>('input', { required: true })
 
 const container = ref<HTMLElement | null>(null)
 
-useEditor(
+const { getValue, setValue } = useEditor(
   container,
   {
     language: 'json',
-    value: input as Ref<string>,
+    initialValue: props.initialValue,
   },
   toRef(props, 'darkMode'),
 )
+
+defineExpose({ getValue, setValue })
 </script>
 
 <template>

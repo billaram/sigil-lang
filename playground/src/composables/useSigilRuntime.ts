@@ -21,10 +21,14 @@ export function useSigilRuntime() {
     if (initPromise) return initPromise
     initPromise = (async () => {
       try {
+        console.log('[sigil] Initializing WASM runtime...')
         await initWasm()
         ready.value = true
+        console.log('[sigil] WASM runtime ready')
       } catch (e) {
-        initError.value = e instanceof Error ? e.message : String(e)
+        const msg = e instanceof Error ? e.message : String(e)
+        initError.value = msg
+        console.error('[sigil] WASM init failed:', msg)
       } finally {
         loading.value = false
       }
@@ -37,60 +41,30 @@ export function useSigilRuntime() {
 
     try {
       const runtime = getRuntime()
+      console.log('[sigil] Running program...')
       const json = runtime.run(source, inputJson || '{}')
       const parsed = JSON.parse(json)
 
       if (parsed.error) {
+        console.log('[sigil] Program error:', parsed.error)
         const lc = parseLineColumn(parsed.error)
         return { error: { error: parsed.error, ...lc } }
       }
 
-      return {
-        result: {
-          output_lines: parsed.output_lines ?? [],
-          result: parsed.result,
-          bindings: parsed.bindings ?? {},
-        },
+      const result: SigilResult = {
+        output_lines: parsed.output_lines ?? [],
+        result: parsed.result,
+        bindings: parsed.bindings ?? {},
+        trace: parsed.trace ?? [],
       }
+      console.log('[sigil] Program completed:', result.output_lines.length, 'output lines,', result.trace.length, 'trace entries')
+      return { result }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      console.error('[sigil] Runtime error:', msg)
       return { error: { error: msg, ...parseLineColumn(msg) } }
     }
   }
 
-  function compile(source: string): { programId?: number; error?: SigilError } {
-    if (!ready.value) return { error: { error: 'WASM runtime not ready' } }
-    try {
-      const runtime = getRuntime()
-      const id = runtime.compile(source)
-      return { programId: id }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { error: { error: msg, ...parseLineColumn(msg) } }
-    }
-  }
-
-  function execute(programId: number, inputJson: string): { result?: SigilResult; error?: SigilError } {
-    if (!ready.value) return { error: { error: 'WASM runtime not ready' } }
-    try {
-      const runtime = getRuntime()
-      const json = runtime.execute(programId, inputJson || '{}')
-      const parsed = JSON.parse(json)
-      if (parsed.error) {
-        return { error: { error: parsed.error, ...parseLineColumn(parsed.error) } }
-      }
-      return {
-        result: {
-          output_lines: parsed.output_lines ?? [],
-          result: parsed.result,
-          bindings: parsed.bindings ?? {},
-        },
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { error: { error: msg, ...parseLineColumn(msg) } }
-    }
-  }
-
-  return { loading, ready, initError, initialize, run, compile, execute }
+  return { loading, ready, initError, initialize, run }
 }

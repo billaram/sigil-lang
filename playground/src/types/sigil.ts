@@ -1,7 +1,15 @@
+export interface TraceEntry {
+  rule: string
+  priority: number
+  fired: boolean
+  explain: string
+}
+
 export interface SigilResult {
   output_lines: string[]
   result: unknown
   bindings: Record<string, unknown>
+  trace: TraceEntry[]
 }
 
 export interface SigilError {

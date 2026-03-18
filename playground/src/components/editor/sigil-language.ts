@@ -1,6 +1,358 @@
-import * as monaco from 'monaco-editor'
+import { StreamLanguage, LanguageSupport } from '@codemirror/language'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
+import { autocompletion, snippet, type CompletionContext, type Completion } from '@codemirror/autocomplete'
+import { EditorView } from '@codemirror/view'
 
-const SIGIL_KEYWORDS = [
+// ---------------------------------------------------------------------------
+// Keyword / token sets
+// ---------------------------------------------------------------------------
+
+const SIGIL_KEYWORDS = new Set([
+  'rule', 'when', 'then', 'and', 'or', 'not', 'if', 'else',
+  'given', 'define', 'as', 'is', 'exceeds', 'below', 'between',
+  'any', 'all', 'none', 'in',
+  'import', 'export', 'from', 'module', 'type', 'neural', 'explain', 'with',
+  'true', 'false', 'using', 'compute', 'return', 'trace', 'match',
+  'for', 'each', 'evaluate', 'main',
+  'has', 'have', 'private', 'mutable', 'try', 'on', 'error',
+  'fallback', 'to', 'returns', 'record', 'one', 'of', 'priority',
+  'at', 'least', 'most', 'becomes', 'empty',
+  'contains', 'starts', 'ends', 'matches', 'pattern', 'equals',
+  'python', 'rust', 'list', 'Option', 'filter', 'where', 'sort', 'by',
+  'take', 'first', 'last', 'map', 'ascending', 'descending',
+  'assigned', 'count', 'query', 'within',
+])
+
+const SIGIL_UNITS = new Set([
+  'degrees', 'percent', 'seconds', 'milliseconds', 'dollars', 'confidence', 'years',
+])
+
+const SIGIL_TYPES = new Set(['Number', 'Text', 'Symbol', 'Bool', 'List'])
+
+// ---------------------------------------------------------------------------
+// StreamLanguage tokenizer
+// ---------------------------------------------------------------------------
+
+interface SigilState {
+  context: 'root' | 'blockComment' | 'string' | 'interpolation'
+  commentDepth: number
+}
+
+const sigilStreamParser = StreamLanguage.define<SigilState>({
+  startState(): SigilState {
+    return { context: 'root', commentDepth: 0 }
+  },
+
+  token(stream, state): string | null {
+    switch (state.context) {
+      case 'blockComment':
+        return tokenBlockComment(stream, state)
+      case 'string':
+        return tokenString(stream, state)
+      case 'interpolation':
+        return tokenInterpolation(stream, state)
+      default:
+        return tokenRoot(stream, state)
+    }
+  },
+
+  languageData: {
+    commentTokens: { line: '--', block: { open: '{-', close: '-}' } },
+    closeBrackets: { brackets: ['(', '[', '{', '"'] },
+    indentOnInput: /:\s*$/,
+  },
+})
+
+function tokenRoot(stream: any, state: SigilState): string | null {
+  // Whitespace
+  if (stream.eatSpace()) return null
+
+  // Doc comments (--- ...)
+  if (stream.match('---')) {
+    stream.skipToEnd()
+    return 'docComment'
+  }
+
+  // Block comment start
+  if (stream.match('{-')) {
+    state.context = 'blockComment'
+    state.commentDepth = 1
+    return 'blockComment'
+  }
+
+  // Line comment (-- ...)
+  if (stream.match('--')) {
+    stream.skipToEnd()
+    return 'lineComment'
+  }
+
+  // String start
+  if (stream.match('"')) {
+    state.context = 'string'
+    return 'string'
+  }
+
+  // Symbols (:name)
+  if (stream.match(/^:[a-zA-Z_]\w*/)) {
+    return 'atom'
+  }
+
+  // Numbers (float then int)
+  if (stream.match(/^\d+\.\d+/)) {
+    return 'number'
+  }
+  if (stream.match(/^\d+/)) {
+    return 'number'
+  }
+
+  // Pipe operator
+  if (stream.match('|>')) {
+    return 'operatorKeyword'
+  }
+
+  // Arrow operator
+  if (stream.match('->')) {
+    return 'operator'
+  }
+
+  // Lambda arrow
+  if (stream.match('=>')) {
+    return 'operator'
+  }
+
+  // Multi-char comparison operators
+  if (stream.match('>=') || stream.match('<=') || stream.match('!=')) {
+    return 'operator'
+  }
+
+  // Scope operator
+  if (stream.match('::')) {
+    return 'operator'
+  }
+
+  // Single-char operators
+  if (stream.match(/^[+\-*/><]=?/)) {
+    return 'operator'
+  }
+
+  // Dot
+  if (stream.eat('.')) {
+    return 'operator'
+  }
+
+  // Delimiters
+  if (stream.match(/^[()[\]{}]/)) {
+    return 'bracket'
+  }
+
+  if (stream.match(/^[,;]/)) {
+    return 'punctuation'
+  }
+
+  if (stream.eat(':')) {
+    return 'punctuation'
+  }
+
+  // Identifiers / keywords
+  if (stream.match(/^[a-zA-Z_]\w*/)) {
+    const word = stream.current()
+    if (SIGIL_TYPES.has(word)) return 'typeName'
+    if (SIGIL_KEYWORDS.has(word)) return 'keyword'
+    if (SIGIL_UNITS.has(word)) return 'unit'
+    return 'variableName'
+  }
+
+  // Advance on unknown char
+  stream.next()
+  return null
+}
+
+function tokenBlockComment(stream: any, state: SigilState): string {
+  while (!stream.eol()) {
+    if (stream.match('-}')) {
+      state.commentDepth--
+      if (state.commentDepth <= 0) {
+        state.context = 'root'
+        return 'blockComment'
+      }
+    } else if (stream.match('{-')) {
+      state.commentDepth++
+    } else {
+      stream.next()
+    }
+  }
+  return 'blockComment'
+}
+
+function tokenString(stream: any, state: SigilState): string {
+  // Interpolation start
+  if (stream.eat('{')) {
+    state.context = 'interpolation'
+    return 'meta'
+  }
+
+  // Escape sequence
+  if (stream.match(/^\\./)) {
+    return 'escape'
+  }
+
+  // End of string
+  if (stream.eat('"')) {
+    state.context = 'root'
+    return 'string'
+  }
+
+  // String content
+  if (stream.match(/^[^"\\{]+/)) {
+    return 'string'
+  }
+
+  stream.next()
+  return 'string'
+}
+
+function tokenInterpolation(stream: any, state: SigilState): string {
+  if (stream.eat('}')) {
+    state.context = 'string'
+    return 'meta'
+  }
+  if (stream.match(/^[^}]+/)) {
+    return 'variableName'
+  }
+  stream.next()
+  return 'variableName'
+}
+
+// ---------------------------------------------------------------------------
+// Themes
+// ---------------------------------------------------------------------------
+
+const lightHighlightStyle = HighlightStyle.define([
+  { tag: tags.keyword, color: '#1d4ed8', fontWeight: 'bold' },
+  { tag: tags.unit, color: '#b45309' },
+  { tag: tags.atom, color: '#7c3aed' },
+  { tag: tags.string, color: '#15803d' },
+  { tag: tags.meta, color: '#0891b2' },
+  { tag: tags.escape, color: '#15803d', fontWeight: 'bold' },
+  { tag: tags.number, color: '#c2410c' },
+  { tag: tags.lineComment, color: '#64748b', fontStyle: 'italic' },
+  { tag: tags.docComment, color: '#475569', fontStyle: 'italic', fontWeight: 'bold' },
+  { tag: tags.blockComment, color: '#64748b', fontStyle: 'italic' },
+  { tag: tags.typeName, color: '#0e7490', fontWeight: 'bold' },
+  { tag: tags.operator, color: '#475569' },
+  { tag: tags.operatorKeyword, color: '#7c3aed', fontWeight: 'bold' },
+  { tag: tags.variableName, color: '#1e293b' },
+  { tag: tags.bracket, color: '#64748b' },
+  { tag: tags.punctuation, color: '#64748b' },
+])
+
+const lightEditorTheme = EditorView.theme({
+  '&': {
+    backgroundColor: '#ffffff',
+    color: '#1e293b',
+  },
+  '.cm-content': {
+    caretColor: '#0ea5e9',
+    fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+    fontSize: '14px',
+  },
+  '&.cm-focused .cm-cursor': {
+    borderLeftColor: '#0ea5e9',
+  },
+  '.cm-activeLine': {
+    backgroundColor: '#f8fafc',
+  },
+  '.cm-gutters': {
+    backgroundColor: '#ffffff',
+    color: '#94a3b8',
+    borderRight: '1px solid #e2e8f0',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: '#f8fafc',
+  },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+    backgroundColor: '#dbeafe',
+  },
+  '.cm-tooltip': {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+  },
+  '.cm-tooltip-autocomplete': {
+    '& > ul > li[aria-selected]': {
+      backgroundColor: '#dbeafe',
+      color: '#1e293b',
+    },
+  },
+}, { dark: false })
+
+const darkHighlightStyle = HighlightStyle.define([
+  { tag: tags.keyword, color: '#38bdf8', fontWeight: 'bold' },
+  { tag: tags.unit, color: '#fbbf24' },
+  { tag: tags.atom, color: '#a78bfa' },
+  { tag: tags.string, color: '#34d399' },
+  { tag: tags.meta, color: '#22d3ee' },
+  { tag: tags.escape, color: '#34d399', fontWeight: 'bold' },
+  { tag: tags.number, color: '#fb923c' },
+  { tag: tags.lineComment, color: '#64748b', fontStyle: 'italic' },
+  { tag: tags.docComment, color: '#94a3b8', fontStyle: 'italic', fontWeight: 'bold' },
+  { tag: tags.blockComment, color: '#64748b', fontStyle: 'italic' },
+  { tag: tags.typeName, color: '#22d3ee', fontWeight: 'bold' },
+  { tag: tags.operator, color: '#94a3b8' },
+  { tag: tags.operatorKeyword, color: '#a78bfa', fontWeight: 'bold' },
+  { tag: tags.variableName, color: '#e2e8f0' },
+  { tag: tags.bracket, color: '#64748b' },
+  { tag: tags.punctuation, color: '#64748b' },
+])
+
+const darkEditorTheme = EditorView.theme({
+  '&': {
+    backgroundColor: '#0f172a',
+    color: '#e2e8f0',
+  },
+  '.cm-content': {
+    caretColor: '#0ea5e9',
+    fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+    fontSize: '14px',
+  },
+  '&.cm-focused .cm-cursor': {
+    borderLeftColor: '#0ea5e9',
+  },
+  '.cm-activeLine': {
+    backgroundColor: '#1e293b',
+  },
+  '.cm-gutters': {
+    backgroundColor: '#0f172a',
+    color: '#475569',
+    borderRight: '1px solid #1e293b',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: '#1e293b',
+  },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+    backgroundColor: '#1e3a5f',
+  },
+  '.cm-tooltip': {
+    backgroundColor: '#1e293b',
+    border: '1px solid #334155',
+    color: '#e2e8f0',
+  },
+  '.cm-tooltip-autocomplete': {
+    '& > ul > li[aria-selected]': {
+      backgroundColor: '#334155',
+      color: '#e2e8f0',
+    },
+  },
+}, { dark: true })
+
+export const sigilLightTheme = [lightEditorTheme, syntaxHighlighting(lightHighlightStyle)]
+export const sigilDarkTheme = [darkEditorTheme, syntaxHighlighting(darkHighlightStyle)]
+
+// ---------------------------------------------------------------------------
+// Completions + snippets
+// ---------------------------------------------------------------------------
+
+const KEYWORD_LIST = [
   'rule', 'when', 'then', 'and', 'or', 'not', 'if', 'else',
   'given', 'define', 'as', 'is', 'exceeds', 'below', 'between',
   'any', 'all', 'none', 'in',
@@ -16,240 +368,65 @@ const SIGIL_KEYWORDS = [
   'assigned', 'count', 'query', 'within',
 ]
 
-const SIGIL_UNITS = [
-  'degrees', 'percent', 'seconds', 'milliseconds', 'dollars', 'confidence', 'years',
+const snippetCompletions: Completion[] = [
+  {
+    label: 'rule',
+    type: 'snippet',
+    detail: 'Define a new rule',
+    apply: snippet('rule ${name}:\n  when ${condition}\n  then ${action}\n  explain "${reason}"'),
+  },
+  {
+    label: 'compute',
+    type: 'snippet',
+    detail: 'Define a compute function',
+    apply: snippet('compute ${name} from ${param}: ${Number} returns ${Number}:\n  return ${expression}'),
+  },
+  {
+    label: 'main',
+    type: 'snippet',
+    detail: 'Define the main block',
+    apply: snippet('main:\n  given ${x} as ${42}\n  print(${x})'),
+  },
+  {
+    label: 'define',
+    type: 'snippet',
+    detail: 'Define a constant',
+    apply: snippet('define ${NAME} as ${value}'),
+  },
+  {
+    label: 'type record',
+    type: 'snippet',
+    detail: 'Define a record type',
+    apply: snippet('type ${Name} is record:\n  ${field}: ${Number}'),
+  },
+  {
+    label: 'match',
+    type: 'snippet',
+    detail: 'Match expression',
+    apply: snippet('match ${expr}:\n  ${:value} -> ${result}\n  _ -> ${default}'),
+  },
 ]
 
-const SIGIL_TYPES = ['Number', 'Text', 'Symbol', 'Bool', 'List']
+function sigilCompletions(context: CompletionContext) {
+  const word = context.matchBefore(/[a-zA-Z_]\w*/)
+  if (!word) return null
+  if (word.from === word.to && !context.explicit) return null
 
-let registered = false
+  const keywordItems: Completion[] = KEYWORD_LIST.map((kw) => ({
+    label: kw,
+    type: 'keyword',
+  }))
 
-export function registerSigilLanguage() {
-  if (registered) return
-  registered = true
-
-  monaco.languages.register({ id: 'sigil', extensions: ['.sigil'] })
-
-  monaco.languages.setMonarchTokensProvider('sigil', {
-    keywords: SIGIL_KEYWORDS,
-    units: SIGIL_UNITS,
-    typeKeywords: SIGIL_TYPES,
-
-    tokenizer: {
-      root: [
-        // Doc comments
-        [/---.*$/, 'comment.doc'],
-        // Multi-line comments
-        [/\{-/, 'comment', '@comment'],
-        // Single-line comments
-        [/--.*$/, 'comment'],
-
-        // Strings with interpolation
-        [/"/, 'string', '@string'],
-
-        // Symbols (:name)
-        [/:[a-zA-Z_]\w*/, 'variable.symbol'],
-
-        // Numbers with optional unit
-        [/\d+\.\d+/, 'number.float'],
-        [/\d+/, 'number'],
-
-        // Identifiers and keywords
-        [/[a-zA-Z_]\w*/, {
-          cases: {
-            '@typeKeywords': 'type',
-            '@keywords': 'keyword',
-            '@units': 'keyword.unit',
-            '@default': 'identifier',
-          },
-        }],
-
-        // Operators
-        [/\|>/, 'operator.pipe'],
-        [/->/, 'operator.arrow'],
-        [/>=|<=|!=/, 'operator.comparison'],
-        [/[+\-*/><]=?/, 'operator'],
-        [/\./, 'delimiter.dot'],
-        [/::/, 'delimiter.scope'],
-
-        // Delimiters
-        [/[()[\]{}]/, 'delimiter.bracket'],
-        [/[,:]/, 'delimiter'],
-      ],
-
-      comment: [
-        [/[^{}-]+/, 'comment'],
-        [/-\}/, 'comment', '@pop'],
-        [/./, 'comment'],
-      ],
-
-      string: [
-        [/\{/, 'string.interpolation', '@interpolation'],
-        [/[^"\\{]+/, 'string'],
-        [/\\./, 'string.escape'],
-        [/"/, 'string', '@pop'],
-      ],
-
-      interpolation: [
-        [/\}/, 'string.interpolation', '@pop'],
-        [/[^}]+/, 'variable'],
-      ],
-    },
-  })
-
-  monaco.languages.setLanguageConfiguration('sigil', {
-    comments: {
-      lineComment: '--',
-      blockComment: ['{-', '-}'],
-    },
-    brackets: [
-      ['(', ')'],
-      ['[', ']'],
-      ['{', '}'],
-    ],
-    autoClosingPairs: [
-      { open: '(', close: ')' },
-      { open: '[', close: ']' },
-      { open: '{', close: '}' },
-      { open: '"', close: '"' },
-    ],
-    indentationRules: {
-      increaseIndentPattern: /:\s*$/,
-      decreaseIndentPattern: /^\s*(else|then)\b/,
-    },
-  })
-
-  monaco.languages.registerCompletionItemProvider('sigil', {
-    provideCompletionItems(model, position) {
-      const word = model.getWordUntilPosition(position)
-      const range = {
-        startLineNumber: position.lineNumber,
-        endLineNumber: position.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: word.endColumn,
-      }
-
-      const keywordSuggestions = SIGIL_KEYWORDS.map((kw) => ({
-        label: kw,
-        kind: monaco.languages.CompletionItemKind.Keyword,
-        insertText: kw,
-        range,
-      }))
-
-      const snippets = [
-        {
-          label: 'rule',
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: 'rule ${1:name}:\n  when ${2:condition}\n  then ${3:action}\n  explain "${4:reason}"',
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: 'Define a new rule',
-          range,
-        },
-        {
-          label: 'compute',
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: 'compute ${1:name} from ${2:param}: ${3:Number} returns ${4:Number}:\n  return ${5:expression}',
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: 'Define a compute function',
-          range,
-        },
-        {
-          label: 'main',
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: 'main:\n  ${1:given x as 42}\n  ${2:print(x)}',
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: 'Define the main block',
-          range,
-        },
-        {
-          label: 'define',
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: 'define ${1:NAME} as ${2:value}',
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: 'Define a constant',
-          range,
-        },
-        {
-          label: 'type record',
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: 'type ${1:Name} is record:\n  ${2:field}: ${3:Number}',
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: 'Define a record type',
-          range,
-        },
-        {
-          label: 'match',
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: 'match ${1:expr}:\n  ${2::value} -> ${3:result}\n  _ -> ${4:default}',
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: 'Match expression',
-          range,
-        },
-      ]
-
-      return { suggestions: [...keywordSuggestions, ...snippets] }
-    },
-  })
-
-  // Light theme
-  monaco.editor.defineTheme('sigil-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [
-      { token: 'keyword', foreground: '1d4ed8', fontStyle: 'bold' },
-      { token: 'keyword.unit', foreground: 'b45309' },
-      { token: 'variable.symbol', foreground: '7c3aed' },
-      { token: 'string', foreground: '15803d' },
-      { token: 'string.interpolation', foreground: '0891b2' },
-      { token: 'string.escape', foreground: '15803d', fontStyle: 'bold' },
-      { token: 'number', foreground: 'c2410c' },
-      { token: 'number.float', foreground: 'c2410c' },
-      { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
-      { token: 'comment.doc', foreground: '475569', fontStyle: 'italic bold' },
-      { token: 'type', foreground: '0e7490', fontStyle: 'bold' },
-      { token: 'operator', foreground: '475569' },
-      { token: 'operator.pipe', foreground: '7c3aed', fontStyle: 'bold' },
-      { token: 'operator.arrow', foreground: '7c3aed' },
-      { token: 'delimiter', foreground: '64748b' },
-      { token: 'identifier', foreground: '1e293b' },
-    ],
-    colors: {
-      'editor.background': '#ffffff',
-      'editor.foreground': '#1e293b',
-      'editor.lineHighlightBackground': '#f8fafc',
-      'editorLineNumber.foreground': '#94a3b8',
-      'editorCursor.foreground': '#0ea5e9',
-    },
-  })
-
-  // Dark theme
-  monaco.editor.defineTheme('sigil-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'keyword', foreground: '38bdf8', fontStyle: 'bold' },
-      { token: 'keyword.unit', foreground: 'fbbf24' },
-      { token: 'variable.symbol', foreground: 'a78bfa' },
-      { token: 'string', foreground: '34d399' },
-      { token: 'string.interpolation', foreground: '22d3ee' },
-      { token: 'string.escape', foreground: '34d399', fontStyle: 'bold' },
-      { token: 'number', foreground: 'fb923c' },
-      { token: 'number.float', foreground: 'fb923c' },
-      { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
-      { token: 'comment.doc', foreground: '94a3b8', fontStyle: 'italic bold' },
-      { token: 'type', foreground: '22d3ee', fontStyle: 'bold' },
-      { token: 'operator', foreground: '94a3b8' },
-      { token: 'operator.pipe', foreground: 'a78bfa', fontStyle: 'bold' },
-      { token: 'operator.arrow', foreground: 'a78bfa' },
-      { token: 'delimiter', foreground: '64748b' },
-      { token: 'identifier', foreground: 'e2e8f0' },
-    ],
-    colors: {
-      'editor.background': '#0f172a',
-      'editor.foreground': '#e2e8f0',
-      'editor.lineHighlightBackground': '#1e293b',
-      'editorLineNumber.foreground': '#475569',
-      'editorCursor.foreground': '#0ea5e9',
-    },
-  })
+  return {
+    from: word.from,
+    options: [...keywordItems, ...snippetCompletions],
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Exported LanguageSupport
+// ---------------------------------------------------------------------------
+
+export const sigilLanguage = new LanguageSupport(sigilStreamParser, [
+  autocompletion({ override: [sigilCompletions] }),
+])

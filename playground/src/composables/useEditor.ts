@@ -1,80 +1,123 @@
 import { onMounted, onBeforeUnmount, ref, watch, type Ref } from 'vue'
-import * as monaco from 'monaco-editor'
-import { registerSigilLanguage } from '@/components/editor/sigil-language'
+import { EditorView, keymap } from '@codemirror/view'
+import { EditorState, Compartment } from '@codemirror/state'
+import { basicSetup } from 'codemirror'
+import { json } from '@codemirror/lang-json'
+import { setDiagnostics, type Diagnostic } from '@codemirror/lint'
+import { sigilLanguage, sigilLightTheme, sigilDarkTheme } from '@/components/editor/sigil-language'
+
+export interface MarkerData {
+  message: string
+  line: number
+  column?: number
+  severity?: 'error' | 'warning' | 'info'
+}
 
 export function useEditor(
   container: Ref<HTMLElement | null>,
   options: {
     language: string
-    value: Ref<string>
-    readOnly?: boolean
+    initialValue: string
     onRun?: () => void
   },
   darkMode: Ref<boolean>,
 ) {
-  const editor = ref<monaco.editor.IStandaloneCodeEditor | null>(null)
-
-  registerSigilLanguage()
+  const view = ref<EditorView | null>(null)
+  const themeCompartment = new Compartment()
 
   onMounted(() => {
-    if (!container.value) return
-
-    const ed = monaco.editor.create(container.value, {
-      value: options.value.value,
-      language: options.language,
-      theme: darkMode.value ? 'sigil-dark' : 'sigil-light',
-      minimap: { enabled: false },
-      fontSize: 14,
-      tabSize: 2,
-      lineNumbers: 'on',
-      scrollBeyondLastLine: false,
-      automaticLayout: true,
-      padding: { top: 8, bottom: 8 },
-      renderLineHighlight: 'line',
-      overviewRulerLanes: 0,
-      hideCursorInOverviewRuler: true,
-      scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
-    })
-
-    ed.onDidChangeModelContent(() => {
-      const val = ed.getValue()
-      if (val !== options.value.value) {
-        options.value.value = val
-      }
-    })
-
-    if (options.onRun) {
-      const run = options.onRun
-      ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run)
+    if (!container.value) {
+      console.warn('[sigil] Editor container not found on mount')
+      return
     }
 
-    editor.value = ed
-  })
+    const langExtension = options.language === 'sigil' ? sigilLanguage : json()
+    const theme = darkMode.value ? sigilDarkTheme : sigilLightTheme
 
-  watch(options.value, (newVal) => {
-    if (editor.value && editor.value.getValue() !== newVal) {
-      editor.value.setValue(newVal)
-    }
+    const keymaps = options.onRun
+      ? keymap.of([{ key: 'Mod-Enter', run: () => { options.onRun!(); return true } }])
+      : keymap.of([])
+
+    const state = EditorState.create({
+      doc: options.initialValue,
+      extensions: [
+        basicSetup,
+        langExtension,
+        themeCompartment.of(theme),
+        keymaps,
+        EditorView.theme({
+          '.cm-content': {
+            fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+            fontSize: '14px',
+            padding: '8px 0',
+          },
+          '.cm-scroller': {
+            overflow: 'auto',
+          },
+          '&': {
+            height: '100%',
+          },
+        }),
+        EditorState.tabSize.of(2),
+      ],
+    })
+
+    view.value = new EditorView({
+      state,
+      parent: container.value,
+    })
+
+    console.log('[sigil] CodeMirror editor ready:', options.language)
   })
 
   watch(darkMode, (dark) => {
-    monaco.editor.setTheme(dark ? 'sigil-dark' : 'sigil-light')
+    if (!view.value) return
+    const theme = dark ? sigilDarkTheme : sigilLightTheme
+    view.value.dispatch({
+      effects: themeCompartment.reconfigure(theme),
+    })
   })
 
   onBeforeUnmount(() => {
-    editor.value?.dispose()
+    view.value?.destroy()
+    view.value = null
   })
 
-  function setMarkers(markers: monaco.editor.IMarkerData[]) {
-    const model = editor.value?.getModel()
-    if (model) {
-      monaco.editor.setModelMarkers(model, 'sigil', markers)
+  function getValue(): string {
+    return view.value?.state.doc.toString() ?? options.initialValue
+  }
+
+  function setValue(content: string) {
+    if (!view.value) return
+    const current = view.value.state.doc.toString()
+    if (current !== content) {
+      view.value.dispatch({
+        changes: { from: 0, to: current.length, insert: content },
+      })
     }
   }
 
-  function clearMarkers() {
-    setMarkers([])
+  function setMarkers(markers: MarkerData[]) {
+    if (!view.value) return
+    const doc = view.value.state.doc
+    const diagnostics: Diagnostic[] = markers.map((m) => {
+      const line = Math.min(m.line, doc.lines)
+      const lineObj = doc.line(line)
+      const col = m.column ? Math.min(m.column - 1, lineObj.length) : 0
+      const from = lineObj.from + col
+      const to = Math.min(from + 1, lineObj.to)
+      const severity = m.severity === 'warning' ? 'warning'
+        : m.severity === 'info' ? 'info'
+        : 'error'
+      return { from, to, severity, message: m.message }
+    })
+    view.value.dispatch(setDiagnostics(view.value.state as any, diagnostics))
   }
 
-  return { editor, setMarkers, clearMarkers }
+  function clearMarkers() {
+    if (!view.value) return
+    view.value.dispatch(setDiagnostics(view.value.state as any, []))
+  }
+
+  return { getValue, setValue, setMarkers, clearMarkers }
 }
