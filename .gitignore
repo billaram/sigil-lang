@@ -40,3 +40,11 @@ lang-docs/site/
 # Sigil build artifacts
 *.sigil.compiled
 *.sigil.trace
+
+# Playground
+playground/node_modules/
+playground/dist/
+playground/wasm/*.js
+playground/wasm/*.wasm
+playground/wasm/*.d.ts
+playground/wasm/package.json
